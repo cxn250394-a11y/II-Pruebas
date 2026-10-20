@@ -351,7 +351,7 @@ class MainActivity : Activity() {
         if (important) background = shape(panel, 16, Color.rgb(92, 134, 111))
         val topRow = horizontal()
         val source = settings.displayName(entry.packageId) +
-            if (entry.androidUserId != Process.myUserHandle().identifier) " · perfil alterno" else ""
+            if (entry.androidUserId != Process.myUserHandle().hashCode()) " · perfil alterno" else ""
         val sourceLabel = label("●  $source", 12f, color, true)
         sourceLabel.maxLines = 1
         topRow.addView(sourceLabel, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
