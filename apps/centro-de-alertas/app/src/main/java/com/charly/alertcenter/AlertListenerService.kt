@@ -32,7 +32,7 @@ class AlertListenerService : NotificationListenerService() {
         if (title.isBlank() && body.isBlank()) return
 
         // Capture immutable strings here; StatusBarNotification is not retained across threads.
-        val userId = sbn.user.identifier
+        val userId = sbn.user.hashCode()
         val key = sbn.key
         val posted = sbn.postTime
         val keywords = settings.keywords()
