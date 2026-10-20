@@ -78,7 +78,9 @@ class MainActivity : Activity() {
         showHome()
     }
 
-    // API < 33 lacks receiver flags; the API 33+ branch explicitly uses NOT_EXPORTED.\n    @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")\n    override fun onStart() {
+    // API < 33 lacks receiver flags; the API 33+ branch explicitly uses NOT_EXPORTED.
+    @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
+    override fun onStart() {
         super.onStart()
         val filter = IntentFilter(AlertListenerService.ACTION_HISTORY_UPDATED)
         if (Build.VERSION.SDK_INT >= 33) {
