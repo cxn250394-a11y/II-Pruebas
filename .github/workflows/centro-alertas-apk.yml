@@ -1,0 +1,78 @@
+name: Centro de Alertas | Pruebas y APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/centro-de-alertas/**'
+      - '.github/workflows/centro-alertas-apk.yml'
+  workflow_dispatch:
+
+# En cualquier repositorio ejecuta pruebas y construye APK; solo publica Releases si es privado.
+permissions:
+  contents: write
+
+concurrency:
+  group: centro-alertas-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-test-and-release:
+    # No afecta a repositorios de Super Bet ni RS1000.
+    if: github.repository == 'cxn250394-a11y/II-Pruebas' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: apps/centro-de-alertas
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android SDK
+        uses: android-actions/setup-android@v4
+      - name: Android Platform 35 and Build Tools
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Parse Android XML and check privacy rules
+        run: |
+          python3 scripts/verify-structure.py
+          bash scripts/check-permissions.sh
+      - name: Unit tests and Android lint
+        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest :app:lintDebug
+      - name: Compile signed debug APK
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Package direct-install APK and SHA-256
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk "${GITHUB_WORKSPACE}/Centro-de-Alertas-v0.1.apk"
+          cd "$GITHUB_WORKSPACE"
+          sha256sum Centro-de-Alertas-v0.1.apk > Centro-de-Alertas-v0.1.apk.sha256
+      - name: Attach APK to workflow artifacts (backup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Centro-de-Alertas-APK-${{ github.run_number }}
+          path: |
+            Centro-de-Alertas-v0.1.apk
+            Centro-de-Alertas-v0.1.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish APK directly as private prerelease
+        if: ${{ github.event.repository.private == true }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "centro-alertas-test-${GITHUB_RUN_NUMBER}" \
+            "${GITHUB_WORKSPACE}/Centro-de-Alertas-v0.1.apk" \
+            "${GITHUB_WORKSPACE}/Centro-de-Alertas-v0.1.apk.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Centro de Alertas prueba #${GITHUB_RUN_NUMBER}" \
+            --notes 'APK debug para uso personal. Permiso explícito de acceso a notificaciones; sin Internet ni acceso a cuentas. No publicar ni instalar en dispositivos ajenos.' \
+            --prerelease

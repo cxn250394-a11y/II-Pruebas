@@ -1,0 +1,23 @@
+PASS: minimal permission manifest / no internet or contacts / backup OFF
+PASS: Android manifest and resources parsed, 5 Kotlin source files, 0 uses-permission
+PASS: Acentos y b?squeda
+PASS: B?squeda con espacios
+PASS: B?squeda negativa
+PASS: Palabra exacta
+PASS: Sin falsos positivos gol/golpe
+PASS: Frase roja
+PASS: Frase con acento
+PASS: Desduplicaci?n estable
+PASS: Apps distintas no se unen
+PASS: Perfiles duales distintos
+PASS: C?digo OTP oculto
+PASS: Mensaje ordinario intacto
+PASS: ID de paquete v?lido
+PASS: ID de paquete inv?lido
+PASS: Diferentes claves notifican dos eventos iguales
+PASS: El t?tulo sensible tambi?n se oculta
+PASS: Flashscore M?xico detectado
+PASS: Novibet M?xico detectado
+PASS: L?mites de t?rminos
+PASS: L?mites de texto
+RESULTADO: 20/20 PASS

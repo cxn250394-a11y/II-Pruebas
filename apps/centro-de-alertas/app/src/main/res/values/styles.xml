@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.CentroAlertas" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">#63EDC7</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#0A0F1C</item>
+        <item name="android:navigationBarColor">#0A0F1C</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:fontFamily">sans</item>
+    </style>
+</resources>
