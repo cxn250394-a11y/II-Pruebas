@@ -1,8 +1,8 @@
 plugins {
-    id 'com.android.application' version '8.7.3' apply false
-    id 'com.android.library' version '8.7.3' apply false
-    id 'org.jetbrains.kotlin.android' version '2.2.0' apply false
-    id 'org.jetbrains.kotlin.jvm' version '2.2.0' apply false
+    id 'com.android.application' version '9.2.1' apply false
+    id 'com.android.library' version '9.2.1' apply false
+    id 'org.jetbrains.kotlin.android' version '2.2.10' apply false
+    id 'org.jetbrains.kotlin.jvm' version '2.2.10' apply false
 }
 project(':logic') {
     apply plugin: 'org.jetbrains.kotlin.jvm'
@@ -15,7 +15,7 @@ subprojects { p ->
         apply plugin: 'org.jetbrains.kotlin.android'
         android {
             namespace "mx.charly.${p.name}"
-            compileSdk 35
+            compileSdk 37
             defaultConfig {
                 minSdk 28
                 if (p.name != 'ui') {

@@ -34,7 +34,7 @@ class Race(val circuit:Int=0,val vehicle:Int=0,val difficulty:Int=1){
             if(abs(d.lane)>5.7f)target*=.45f
             if(i==0&&brake)target*=.3f
             if(d.stun>0&&d.shield<=0)target*=.35f
-            d.speed+=(target-d.speed)*min(1f,dt*(if(target<d.speed)5 else 1.1f))
+            d.speed+=(target-d.speed)*min(1f,dt*(if(target<d.speed)5f else 1.1f))
             d.distance+=max(0f,d.speed)*dt
             if(i>0)d.lane=sin(d.distance*.015f+i)*3.8f
         }

@@ -19,7 +19,7 @@ object Feed {
     try{val status=connection.responseCode;require(status==200){"Proveedor respondió HTTP $status"};return connection.inputStream.use{JSONArray(String(Streams.readLimited(it,4_000_000),Charsets.UTF_8))}}
     finally{connection.disconnect()}
  }
- fun parse(raw:JSONArray):List<Match>=(0 until raw.length()).mapNotNull{i->
+ fun parse(raw:JSONArray):List<Match> = (0 until raw.length()).mapNotNull{i->
     val o=raw.optJSONObject(i)?:return@mapNotNull null
     val id=o.optLong("matchID",0);val h=o.optJSONObject("team1")?.optString("teamName").orEmpty();val a=o.optJSONObject("team2")?.optString("teamName").orEmpty()
     if(id<=0||h.isBlank()||a.isBlank())return@mapNotNull null

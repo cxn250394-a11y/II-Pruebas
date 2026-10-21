@@ -55,7 +55,7 @@ class OddsActivity:Screen(){
     private fun pick(){startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply{type="*/*";addCategory(Intent.CATEGORY_OPENABLE)},10)}
     @Deprecated("Activity compatibility") override fun onActivityResult(request:Int,result:Int,data:Intent?){super.onActivityResult(request,result,data)
         if(request!=10||result!=RESULT_OK)return;val uri=data?.data?:return
-        try{val csv=contentResolver.openInputStream(uri)!!.use{val b=it.readNBytes(2_000_001);require(b.size<=2_000_000){"Archivo demasiado grande"};String(b,Charsets.UTF_8)};val parsed=Quotes.parse(csv)
+        try{val csv=contentResolver.openInputStream(uri)!!.use{String(Streams.readLimited(it,2_000_000),Charsets.UTF_8)};val parsed=Quotes.parse(csv)
             confirm("Importar ${parsed.size} observaciones","Reemplazará únicamente el archivo de cuotas, no tu registro de apuestas."){
                 if(!healthy){toast("No se puede escribir: error previo de lectura");return@confirm};prefs.edit().putString("csv",csv).apply();quotes=parsed;demo=false;comparison()
             }
