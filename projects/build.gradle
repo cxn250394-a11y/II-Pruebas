@@ -1,8 +1,8 @@
 plugins {
     id 'com.android.application' version '9.2.1' apply false
     id 'com.android.library' version '9.2.1' apply false
-    id 'org.jetbrains.kotlin.android' version '2.2.10' apply false
-    id 'org.jetbrains.kotlin.jvm' version '2.2.10' apply false
+    id 'org.jetbrains.kotlin.android' version '2.4.10' apply false
+    id 'org.jetbrains.kotlin.jvm' version '2.4.10' apply false
 }
 project(':logic') {
     apply plugin: 'org.jetbrains.kotlin.jvm'
@@ -16,6 +16,7 @@ subprojects { p ->
         android {
             namespace "mx.charly.${p.name}"
             compileSdk 37
+            buildToolsVersion '37.0.0'
             defaultConfig {
                 minSdk 28
                 if (p.name != 'ui') {
@@ -28,6 +29,7 @@ subprojects { p ->
             compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
             kotlinOptions { jvmTarget = '17' }
             testOptions { unitTests.includeAndroidResources = true }
+            sourceSets.main.assets.srcDir(rootProject.file('shared-assets'))
             packaging { resources { excludes += ['META-INF/LICENSE*', 'META-INF/NOTICE*', 'META-INF/AL2.0', 'META-INF/LGPL2.1'] } }
         }
         dependencies {
@@ -41,7 +43,7 @@ subprojects { p ->
 project(':canal') {
     dependencies {
         implementation 'dev.g000sha256:tdl-coroutines-android:14.0.0'
-        implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+        implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
     }
     android { defaultConfig { ndk { abiFilters 'arm64-v8a', 'x86_64' } } }
 }
