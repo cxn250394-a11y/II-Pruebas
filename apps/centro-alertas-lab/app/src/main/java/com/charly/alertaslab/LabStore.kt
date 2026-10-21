@@ -7,14 +7,17 @@ import android.database.sqlite.SQLiteOpenHelper
 import com.charly.alertcenter.AlertRules
 import com.charly.alertcenter.LabAlert
 import com.charly.alertcenter.LabEngine
+import java.io.Closeable
 
 /** Separate app ID + database. It cannot read or overwrite the v0.1 installation. */
-class LabStore(context: Context) : SQLiteOpenHelper(context.applicationContext, "alerts_lab.db", null, 1) {
+class LabStore(context: Context) : SQLiteOpenHelper(context.applicationContext, "alerts_lab.db", null, 1), Closeable {
     companion object {
         val writeLock = Any()
         const val MAX_ROWS = 2000
         const val KEEP_MS = 14L * 24 * 60 * 60 * 1000
     }
+    // Explicit interface is required on older Android versions, not just the compile SDK.
+    override fun close() { super.close() }
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE alerts (
             _id INTEGER PRIMARY KEY AUTOINCREMENT, event_key TEXT NOT NULL UNIQUE,
