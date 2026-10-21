@@ -1,6 +1,5 @@
 package com.charly.alertaslab
 
-import android.app.Application
 import android.app.Notification
 import android.app.Person
 import android.content.Context
@@ -24,7 +23,7 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class LabAndroidTest {
-    private val context: Context get() = RuntimeEnvironment.getApplication<Application>()
+    private val context: Context get() = RuntimeEnvironment.getApplication()
     private val now = 10_000_000_000L
     @Before fun clean() {
         context.deleteDatabase("alerts_lab.db")
@@ -92,8 +91,9 @@ class LabAndroidTest {
     }
     @Test fun listenerRequiresSystemBindPermission() {
         val info=context.packageManager.getPackageInfo(context.packageName,PackageManager.GET_SERVICES)
-        assertEquals(1,info.services.size)
-        assertEquals("android.permission.BIND_NOTIFICATION_LISTENER_SERVICE",info.services.single().permission)
+        val services=requireNotNull(info.services) { "Manifest must expose the protected listener" }
+        assertEquals(1,services.size)
+        assertEquals("android.permission.BIND_NOTIFICATION_LISTENER_SERVICE",services.single().permission)
     }
     private fun views(v: View): List<View> = listOf(v) + if (v is ViewGroup) (0 until v.childCount).flatMap { views(v.getChildAt(it)) } else emptyList()
     @Test fun welcomeAndDemoNeedNoPermissionOrPersistentData() {
