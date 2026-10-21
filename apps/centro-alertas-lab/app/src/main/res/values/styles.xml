@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.AlertasLab" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#73E5BE</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowBackground">#101624</item>
+    </style>
+</resources>
