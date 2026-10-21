@@ -8,54 +8,234 @@ import dev.g000sha256.tdl.dto.*
 import kotlinx.coroutines.*
 import java.util.concurrent.CopyOnWriteArrayList
 
-/** Real TDLib session, not a notification reader. User-initiated login only. */
-class TelegramSession private constructor(private val context:Context){
- companion object {
-  var current:TelegramSession?=null;private set
-  fun start(context:Context):TelegramSession {return current?:TelegramSession(context.applicationContext).also{current=it;it.begin()}}
-  fun preview(content:MessageContent?):String=when(content){is MessageText->content.text.text;is MessagePhoto->"[Foto] "+content.caption.text;is MessageVideo->"[Video] "+content.caption.text;is MessageDocument->"[Archivo] "+content.caption.text;null->"";else->"[${content.javaClass.simpleName.removePrefix("Message")}]"}
- }
- private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
- private val client=TdlClient.create()
- val observers=CopyOnWriteArrayList<()->Unit>()
- var state:AuthorizationState?=null;private set
- var status="Conectando a Telegram";private set
- var ready=false;private set
- val chats=linkedMapOf<Long,Chat>()
- var onMessage:((Message)->Unit)?=null
- private var configured=false
- private fun notifyUi(){observers.forEach{it()}}
- private fun begin(){
-  scope.launch{client.authorizationStateUpdates.collect{u->state=u.authorizationState;ready=state is AuthorizationStateReady
-   status=when(state){is AuthorizationStateWaitTdlibParameters->"Preparando sesión cifrada";is AuthorizationStateWaitPhoneNumber->"Introduce tu teléfono";is AuthorizationStateWaitCode->"Introduce el código recibido en Telegram";is AuthorizationStateWaitPassword->"Introduce tu contraseña de verificación en dos pasos";is AuthorizationStateReady->"Conectado a Telegram";is AuthorizationStateClosed->"Sesión cerrada";is AuthorizationStateLoggingOut->"Cerrando sesión";else->"Estado requerido: ${state?.javaClass?.simpleName}"}
-   if(state is AuthorizationStateWaitTdlibParameters&&!configured)configure()
-   if(ready)refresh()
-   notifyUi()
-  }}
-  scope.launch{client.allUpdates.collect{u->when(u){
-   is UpdateNewChat->{chats[u.chat.id]=u.chat;notifyUi()}
-   is UpdateNewMessage->{onMessage?.invoke(u.message);refreshChat(u.message.chatId)}
-   else->Unit
-  }}}
-  scope.launch{client.setLogVerbosityLevel(0);client.getAuthorizationState()}
- }
- private suspend fun configure(){configured=true
-  try{val v=Vault(context);val id=v.get("api-id")?.toIntOrNull()?:error("Falta api_id");val hash=v.get("api-hash")?:error("Falta api_hash")
-   handle(client.setTdlibParameters(useTestDc=false,databaseDirectory="${context.filesDir}/telegram/db",filesDirectory="${context.filesDir}/telegram/files",databaseEncryptionKey=v.databaseKey(),useFileDatabase=true,useChatInfoDatabase=true,useMessageDatabase=true,useSecretChats=false,apiId=id,apiHash=hash,systemLanguageCode="es",deviceModel=Build.MODEL,systemVersion="Android ${Build.VERSION.RELEASE}",applicationVersion="CanalDeck 0.1 alpha"))
-  }catch(_:Exception){status="No se pudo abrir la configuración cifrada. Revisa las credenciales en esta app.";configured=false;notifyUi()}
- }
- private fun handle(r:TdlResult<*>){if(r is TdlResult.Failure){status="Telegram: ${r.code} · ${r.message.take(160)}";notifyUi()}}
- fun authenticate(value:String){scope.launch{try{val result=when(state){is AuthorizationStateWaitPhoneNumber->client.setAuthenticationPhoneNumber(phoneNumber=value,settings=null);is AuthorizationStateWaitCode->client.checkAuthenticationCode(value);is AuthorizationStateWaitPassword->client.checkAuthenticationPassword(value);else->null};if(result!=null)handle(result)}catch(_:Exception){status="No se pudo completar la autenticación";notifyUi()}}}
- fun refresh(limit:Int=100){if(!ready)return;scope.launch{try{client.loadChats(chatList=ChatListMain(),limit=limit)
-  when(val r=client.getChats(chatList=ChatListMain(),limit=limit)){is TdlResult.Success->{for(id in r.result.chatIds){when(val c=client.getChat(id)){is TdlResult.Success->chats[id]=c.result;else->Unit}};notifyUi()};is TdlResult.Failure->handle(r)}
- }catch(_:Exception){status="No se pudo actualizar la lista";notifyUi()}}}
- private fun refreshChat(id:Long){scope.launch{when(val c=client.getChat(id)){is TdlResult.Success->{chats[id]=c.result;notifyUi()};else->Unit}}}
- fun history(id:Long,before:Long=0,callback:(List<Message>?,String?)->Unit){scope.launch{try{when(val r=client.getChatHistory(chatId=id,fromMessageId=before,offset=0,limit=40,onlyLocal=false)){
-  is TdlResult.Success->callback(r.result.messages.filterNotNull(),null);is TdlResult.Failure->callback(null,"${r.code}: ${r.message.take(120)}")
- }}catch(_:Exception){callback(null,"No se pudo obtener el historial")}}}
- fun photo(fileId:Int,callback:(String?)->Unit){scope.launch{try{when(val r=client.downloadFile(fileId=fileId,priority=1,offset=0,limit=0,synchronous=true)){
-  is TdlResult.Success->{val f=r.result;callback(if(f.size<=20_000_000&&f.local.isDownloadingCompleted)f.local.path else null)};else->callback(null)
- }}catch(_:Exception){callback(null)}}}
- fun logout(){scope.launch{handle(client.logOut())}}
- fun stop(){onMessage=null;current=null;observers.clear();scope.launch{try{client.close()}finally{scope.cancel()}}}
+/** One explicit account session. No bots, proxy service, contact upload or borrowed credentials. */
+class TelegramSession private constructor(private val context: Context) {
+    companion object {
+        @Volatile var current: TelegramSession? = null; private set
+        fun start(context: Context): TelegramSession = current ?: TelegramSession(context.applicationContext).also { current = it; it.begin() }
+        fun preview(c: MessageContent?): String = when (c) {
+            is MessageText -> c.text.text
+            is MessagePhoto -> "▧ Foto · ${c.caption.text}"
+            is MessageVideo -> "▶ Video · ${c.caption.text}"
+            is MessageDocument -> "Archivo · ${c.document.fileName} · ${c.caption.text}"
+            is MessageAudio -> "Audio · ${c.audio.title} · ${c.caption.text}"
+            is MessageVoiceNote -> "Nota de voz · ${c.caption.text}"
+            is MessageSticker -> "Sticker ${c.sticker.emoji}"
+            null -> ""
+            else -> "Contenido no representado por esta versión"
+        }
+        fun errorText(code: Int, raw: String): String = when {
+            raw.contains("PHONE_NUMBER_INVALID") -> "Revisa el teléfono con código de país, por ejemplo +52…"
+            raw.contains("PHONE_CODE_INVALID") || raw.contains("EMAIL_CODE_INVALID") -> "El código no es correcto. Revisa el último código recibido."
+            raw.contains("PHONE_CODE_EXPIRED") -> "El código caducó. Solicita otro desde esta pantalla."
+            raw.contains("PASSWORD_HASH_INVALID") -> "La contraseña de verificación en dos pasos no es correcta."
+            raw.contains("API_ID_INVALID") -> "La identidad de aplicación no es válida. Revisa api_id y api_hash."
+            code == 429 || raw.startsWith("FLOOD_WAIT") -> "Telegram pide esperar antes de reintentar. No repitas el envío de códigos."
+            raw.contains("CHAT_WRITE_FORBIDDEN") || raw.contains("CHAT_SEND") -> "No tienes permiso para escribir en esta conversación."
+            raw.contains("PAYMENT") || raw.contains("STARS") -> "El envío requiere pago o condiciones adicionales. CanalDeck no autoriza gastos."
+            else -> "Telegram no pudo completar esta operación (código $code)."
+        }
+    }
+    private val errorHandler = CoroutineExceptionHandler { _, _ -> status = "La conexión encontró un error. Desconecta y vuelve a conectar."; notifyUi() }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + errorHandler)
+    private val client = TdlClient.create()
+    val observers = CopyOnWriteArrayList<() -> Unit>()
+    val messageObservers = CopyOnWriteArrayList<(Long) -> Unit>()
+    val chats = linkedMapOf<Long, Chat>()
+    val recent = linkedMapOf<Pair<Long, Long>, Message>()
+    val removed = linkedSetOf<Pair<Long, Long>>()
+    var state: AuthorizationState? = null; private set
+    var status = "Iniciando conexión"; private set
+    var network = "Conectando"; private set
+    var accountId = 0L; private set
+    var accountName = ""; private set
+    var ready = false; private set
+    var closing = false; private set
+    var authBusy = false; private set
+    var visibleChat = 0L; private set
+    var onMessage: ((Message) -> Unit)? = null
+    var onRead: ((Long) -> Unit)? = null
+    private var configured = false
+    private var refreshJob: Job? = null
+    private val pendingChats = linkedSetOf<Long>()
+    private var pendingJob: Job? = null
+
+    private fun notifyUi() { observers.forEach { it() } }
+    private fun notifyMessages(chat: Long) { messageObservers.forEach { it(chat) } }
+    private fun record(m: Message) { recent[m.chatId to m.id] = m; while (recent.size > 256) recent.remove(recent.keys.first()); notifyMessages(m.chatId) }
+    private fun forget(chat: Long, ids: LongArray) { ids.forEach { removed.add(chat to it); recent.remove(chat to it) }; while (removed.size > 512) removed.remove(removed.first()); notifyMessages(chat) }
+    private fun begin() {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            client.allUpdates.collect { u ->
+                when (u) {
+                    is UpdateAuthorizationState -> authorization(u.authorizationState)
+                    is UpdateConnectionState -> {
+                        network = when (u.state) { is ConnectionStateReady -> "En línea"; is ConnectionStateWaitingForNetwork -> "Sin red"; is ConnectionStateUpdating -> "Sincronizando"; else -> "Reconectando" }; notifyUi()
+                    }
+                    is UpdateNewChat -> { chats[u.chat.id] = u.chat; notifyUi() }
+                    is UpdateNewMessage -> {
+                        record(u.message); refreshChat(u.message.chatId)
+                        if (ready) onMessage?.invoke(u.message)
+                    }
+                    is UpdateChatLastMessage -> refreshChat(u.chatId)
+                    is UpdateChatTitle -> refreshChat(u.chatId)
+                    is UpdateChatReadInbox -> { refreshChat(u.chatId); if (u.unreadCount == 0) onRead?.invoke(u.chatId) }
+                    is UpdateChatReadOutbox -> refreshChat(u.chatId)
+                    is UpdateMessageContent -> scope.launch {
+                        val r = client.getMessage(chatId = u.chatId, messageId = u.messageId)
+                        if (r is TdlResult.Success) record(r.result)
+                    }
+                    is UpdateDeleteMessages -> if (u.isPermanent) forget(u.chatId, u.messageIds)
+                    is UpdateMessageSendSucceeded -> { forget(u.message.chatId, longArrayOf(u.oldMessageId)); record(u.message); refreshChat(u.message.chatId) }
+                    is UpdateMessageSendFailed -> { forget(u.message.chatId, longArrayOf(u.oldMessageId)); record(u.message); status = errorText(u.error.code, u.error.message); notifyUi() }
+                    else -> Unit
+                }
+            }
+        }
+        scope.launch { client.setLogVerbosityLevel(0); client.getAuthorizationState() }
+    }
+    private suspend fun authorization(s: AuthorizationState) {
+        state = s; authBusy = false; ready = false
+        status = when (s) {
+            is AuthorizationStateWaitTdlibParameters -> "Preparando sesión cifrada"
+            is AuthorizationStateWaitPhoneNumber -> "Introduce tu teléfono"
+            is AuthorizationStateWaitCode -> "Introduce el código de acceso"
+            is AuthorizationStateWaitPassword -> "Verificación en dos pasos"
+            is AuthorizationStateWaitEmailAddress -> "Telegram solicita tu correo de acceso"
+            is AuthorizationStateWaitEmailCode -> "Introduce el código enviado a tu correo"
+            is AuthorizationStateWaitOtherDeviceConfirmation -> "Confirma el acceso desde otro dispositivo"
+            is AuthorizationStateReady -> "Cargando tu cuenta"
+            is AuthorizationStateClosing -> "Desconectando"
+            is AuthorizationStateClosed -> "Desconectado"
+            is AuthorizationStateLoggingOut -> "Cerrando esta sesión"
+            is AuthorizationStateWaitRegistration -> "Esta versión requiere una cuenta ya creada en Telegram oficial"
+            else -> "Telegram solicita un paso adicional no implementado en esta versión"
+        }
+        notifyUi()
+        when (s) {
+            is AuthorizationStateWaitTdlibParameters -> if (!configured) configure()
+            is AuthorizationStateReady -> scope.launch {
+                when (val me = client.getMe()) {
+                    is TdlResult.Success -> { if (closing) return@launch; accountId = me.result.id; accountName = me.result.firstName; ready = true; status = "Sesión iniciada"; notifyUi(); refresh() }
+                    is TdlResult.Failure -> failure(me)
+                }
+            }
+            is AuthorizationStateClosed -> { closing = true; accountId = 0; chats.clear(); recent.clear(); removed.clear(); if (current === this) current = null; notifyUi(); scope.cancel() }
+            else -> Unit
+        }
+    }
+    private suspend fun configure() {
+        configured = true
+        try {
+            val v = Vault(context); val id = v.get("api-id").orEmpty(); val hash = v.get("api-hash").orEmpty()
+            require(Vault.validApi(id, hash))
+            val r = client.setTdlibParameters(useTestDc = false, databaseDirectory = "${context.filesDir}/telegram/db",
+                filesDirectory = "${context.filesDir}/telegram/files", databaseEncryptionKey = v.databaseKey(),
+                useFileDatabase = true, useChatInfoDatabase = true, useMessageDatabase = true, useSecretChats = false,
+                apiId = id.toInt(), apiHash = hash, systemLanguageCode = "es", deviceModel = Build.MODEL,
+                systemVersion = "Android ${Build.VERSION.RELEASE}", applicationVersion = "CanalDeck 0.2 beta")
+            if (r is TdlResult.Failure) { configured = false; failure(r) }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { configured = false; status = "No se pudo abrir la configuración cifrada. Revisa tu identidad de aplicación."; notifyUi() }
+    }
+    private fun failure(r: TdlResult.Failure) { status = errorText(r.code, r.message); notifyUi() }
+    fun authenticate(value: String) {
+        if (authBusy || closing || value.isBlank()) return
+        authBusy = true; notifyUi()
+        scope.launch {
+            try {
+                val r = when (state) {
+                    is AuthorizationStateWaitPhoneNumber -> client.setAuthenticationPhoneNumber(phoneNumber = value.trim(), settings = null)
+                    is AuthorizationStateWaitCode -> client.checkAuthenticationCode(value.trim())
+                    is AuthorizationStateWaitPassword -> client.checkAuthenticationPassword(value)
+                    is AuthorizationStateWaitEmailAddress -> client.setAuthenticationEmailAddress(value.trim())
+                    is AuthorizationStateWaitEmailCode -> client.checkAuthenticationEmailCode(EmailAddressAuthenticationCode(code = value.trim()))
+                    else -> null
+                }
+                if (r is TdlResult.Failure) failure(r)
+            } finally { authBusy = false; notifyUi() }
+        }
+    }
+    fun resendCode() { if (!authBusy && state is AuthorizationStateWaitCode) scope.launch { val r = client.resendAuthenticationCode(); if (r is TdlResult.Failure) failure(r) } }
+    fun refresh(limit: Int = 200, archive: Boolean = false) {
+        if (!ready || closing || refreshJob?.isActive == true) return
+        refreshJob = scope.launch {
+            val list: ChatList = if (archive) ChatListArchive() else ChatListMain()
+            client.loadChats(chatList = list, limit = limit.coerceIn(1,1000))
+            when (val r = client.getChats(chatList = list, limit = limit.coerceIn(1,1000))) {
+                is TdlResult.Success -> { for (id in r.result.chatIds) { val c = client.getChat(id); if (c is TdlResult.Success) chats[id] = c.result }; notifyUi() }
+                is TdlResult.Failure -> failure(r)
+            }
+        }
+    }
+    private fun refreshChat(id: Long) {
+        if (!ready || closing) return
+        pendingChats.add(id)
+        if (pendingJob?.isActive == true) return
+        pendingJob = scope.launch {
+            delay(150)
+            while (pendingChats.isNotEmpty()) {
+                val ids = pendingChats.toList(); pendingChats.clear()
+                for (chat in ids) { val r = client.getChat(chat); if (r is TdlResult.Success) chats[chat] = r.result }
+                notifyUi()
+            }
+        }
+    }
+    fun history(id: Long, before: Long = 0, callback: (List<Message>?, String?) -> Unit) {
+        if (!ready || closing) { callback(null,"La sesión no está conectada"); return }
+        scope.launch {
+            when (val r = client.getChatHistory(chatId = id, fromMessageId = before, offset = 0, limit = 40, onlyLocal = false)) {
+                is TdlResult.Success -> callback(r.result.messages.filterNotNull(), null)
+                is TdlResult.Failure -> callback(null,errorText(r.code,r.message))
+            }
+        }
+    }
+    fun searchMessages(id: Long, query: String, callback: (List<Message>?, String?) -> Unit) {
+        if (!ready || closing) return
+        scope.launch { when (val r = client.searchChatMessages(chatId=id,query=query,fromMessageId=0,offset=0,limit=50)) {
+            is TdlResult.Success -> callback(r.result.messages.filterNotNull(),null)
+            is TdlResult.Failure -> callback(null,errorText(r.code,r.message))
+        } }
+    }
+    fun showChat(id: Long) {
+        if (visibleChat == id) return
+        val old = visibleChat; visibleChat = id
+        if (!ready || closing) return
+        scope.launch { if (old != 0L) client.closeChat(old); if (id != 0L) client.openChat(id) }
+    }
+    fun viewed(id: Long, messages: LongArray) {
+        if (!ready || closing || visibleChat != id || messages.isEmpty()) return
+        scope.launch { client.viewMessages(chatId=id,messageIds=messages,source=MessageSourceChatHistory(),forceRead=false) }
+    }
+    fun sendText(id: Long, text: String, reply: Message?, callback: (Message?, String?) -> Unit) {
+        if (!ready || closing || !DeckRules.validMessage(text)) { callback(null,"Escribe entre 1 y 4,096 caracteres"); return }
+        scope.launch {
+            val options = MessageSendOptions(suggestedPostInfo=null,disableNotification=false,fromBackground=false,
+                protectContent=false,allowPaidBroadcast=false,paidMessageStarCount=0,updateOrderOfInstalledStickerSets=false,
+                schedulingState=null,effectId=0,sendingId=0,onlyPreview=false)
+            val target = reply?.let { InputMessageReplyToMessage(messageId=it.id,quote=null,checklistTaskId=0,pollOptionId="") }
+            when (val r = client.sendMessage(chatId=id,topicId=reply?.topicId,replyTo=target,options=options,
+                inputMessageContent=InputMessageText(text=FormattedText(text=text,entities=emptyArray()),linkPreviewOptions=null,clearDraft=false))) {
+                is TdlResult.Success -> { record(r.result); callback(r.result,null) }
+                is TdlResult.Failure -> callback(null,errorText(r.code,r.message))
+            }
+        }
+    }
+    fun media(fileId: Int, maxBytes: Long, callback: (String?) -> Unit) {
+        if (!ready || closing) { callback(null); return }
+        scope.launch {
+            when (val r = client.downloadFile(fileId=fileId,priority=1,offset=0,limit=maxBytes+1,synchronous=true)) {
+                is TdlResult.Success -> {
+                    val f = r.result
+                    callback(if (f.local.isDownloadingCompleted && f.size <= maxBytes && f.local.downloadedSize <= maxBytes) f.local.path else null)
+                }
+                else -> callback(null)
+            }
+        }
+    }
+    fun logout() { if (!closing) scope.launch { val r = client.logOut(); if (r is TdlResult.Failure) failure(r) } }
+    fun stop() {
+        if (closing) return
+        closing = true; ready = false; onMessage = null; onRead = null; visibleChat = 0; status = "Desconectando"; notifyUi()
+        scope.launch { client.close() }
+    }
 }
