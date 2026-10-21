@@ -29,6 +29,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: false
       - name: SDK 35
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - uses: gradle/actions/setup-gradle@v4
@@ -37,7 +39,9 @@ jobs:
       - name: Privacy and isolation contracts
         run: python3 ../../scripts/check-lab.py
       - name: Core, Android JVM tests, lint and APK
-        run: gradle --no-daemon --stacktrace :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug 2>&1 | tee build-ci.log
       - name: Verify signed APK and record provenance
         run: |
           mkdir -p "${GITHUB_WORKSPACE}/lab-delivery"
@@ -62,5 +66,6 @@ jobs:
             shared/alerts-core/build/test-results/test/
             apps/centro-alertas-lab/app/build/test-results/testDebugUnitTest/
             apps/centro-alertas-lab/app/build/reports/lint-results-debug.html
+            apps/centro-alertas-lab/build-ci.log
           if-no-files-found: warn
           retention-days: 14
