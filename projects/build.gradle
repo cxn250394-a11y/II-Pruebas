@@ -1,0 +1,75 @@
+plugins {
+    id 'com.android.application' version '8.7.3' apply false
+    id 'com.android.library' version '8.7.3' apply false
+    id 'org.jetbrains.kotlin.android' version '2.2.0' apply false
+    id 'org.jetbrains.kotlin.jvm' version '2.2.0' apply false
+}
+project(':logic') {
+    apply plugin: 'org.jetbrains.kotlin.jvm'
+    kotlin { jvmToolchain(17) }
+    dependencies { testImplementation 'junit:junit:4.13.2' }
+}
+subprojects { p ->
+    if (p.name != 'logic') {
+        apply plugin: p.name == 'ui' ? 'com.android.library' : 'com.android.application'
+        apply plugin: 'org.jetbrains.kotlin.android'
+        android {
+            namespace "mx.charly.${p.name}"
+            compileSdk 35
+            defaultConfig {
+                minSdk 28
+                if (p.name != 'ui') {
+                    applicationId "mx.charly.${p.name}"
+                    targetSdk 35
+                    versionCode 1
+                    versionName '0.1.0-alpha'
+                }
+            }
+            compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+            kotlinOptions { jvmTarget = '17' }
+            testOptions { unitTests.includeAndroidResources = true }
+            packaging { resources { excludes += ['META-INF/LICENSE*', 'META-INF/NOTICE*', 'META-INF/AL2.0', 'META-INF/LGPL2.1'] } }
+        }
+        dependencies {
+            implementation project(':logic')
+            if (p.name != 'ui' && p.name != 'kart') implementation project(':ui')
+            testImplementation 'junit:junit:4.13.2'
+            testImplementation 'org.robolectric:robolectric:4.14.1'
+        }
+    }
+}
+project(':canal') {
+    dependencies {
+        implementation 'dev.g000sha256:tdl-coroutines-android:14.0.0'
+        implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+    }
+    android { defaultConfig { ndk { abiFilters 'arm64-v8a', 'x86_64' } } }
+}
+project(':audio') {
+    dependencies {
+        implementation 'androidx.media3:media3-exoplayer:1.5.1'
+        implementation 'androidx.media3:media3-exoplayer-hls:1.5.1'
+        implementation 'androidx.media3:media3-session:1.5.1'
+    }
+}
+project(':kart') {
+    configurations { natives }
+    dependencies {
+        implementation 'com.badlogicgames.gdx:gdx:1.14.2'
+        implementation 'com.badlogicgames.gdx:gdx-backend-android:1.14.2'
+        natives 'com.badlogicgames.gdx:gdx-platform:1.14.2:natives-arm64-v8a'
+        natives 'com.badlogicgames.gdx:gdx-platform:1.14.2:natives-x86_64'
+    }
+    android { sourceSets.main.jniLibs.srcDirs = [layout.buildDirectory.dir('native-libs').get().asFile] }
+    tasks.register('unpackNatives') {
+        inputs.files configurations.natives
+        outputs.dir layout.buildDirectory.dir('native-libs')
+        doLast {
+            configurations.natives.files.each { jar ->
+                def abi = jar.name.contains('arm64') ? 'arm64-v8a' : 'x86_64'
+                copy { from zipTree(jar); include '*.so'; into layout.buildDirectory.dir("native-libs/$abi") }
+            }
+        }
+    }
+    tasks.named('preBuild').configure { dependsOn 'unpackNatives' }
+}

@@ -1,0 +1,83 @@
+name: Five products | Android alpha
+on:
+  pull_request:
+    paths:
+      - 'projects/**'
+      - '.github/workflows/five-products.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: five-products-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-test:
+    if: github.repository == 'cxn250394-a11y/II-Pruebas'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: projects
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: false
+      - name: SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Source snapshot and isolation contracts
+        run: |
+          mkdir -p ../product-source
+          git -C .. archive --format=zip HEAD projects .github/workflows/five-products.yml > ../product-source/source.zip
+          python3 check-contracts.py
+      - name: Source for reproducibility
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: five-products-source
+          path: product-source/
+          retention-days: 14
+      - name: Tests, lint and five installables
+        run: |
+          set -o pipefail
+          gradle --no-daemon --continue --stacktrace :logic:test :canal:testDebugUnitTest :audio:testDebugUnitTest :stats:testDebugUnitTest :odds:testDebugUnitTest :canal:lintDebug :audio:lintDebug :stats:lintDebug :odds:lintDebug :kart:lintDebug :canal:assembleDebug :audio:assembleDebug :stats:assembleDebug :odds:assembleDebug :kart:assembleDebug 2>&1 | tee build-ci.log
+      - name: Verify APKs and provenance
+        run: |
+          mkdir -p ../product-apks
+          for pair in canal:CanalDeck audio:AudioDeck stats:StatsDeck odds:OddsDeck kart:Sandrift-Karts; do
+            module="${pair%%:*}"
+            name="${pair##*:}-v0.1-alpha.apk"
+            cp "$module/build/outputs/apk/debug/$module-debug.apk" "../product-apks/$name"
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "../product-apks/$name" > "../product-apks/$name.verify.txt"
+          done
+          cd ../product-apks
+          sha256sum *.apk > SHA256SUMS.txt
+          git -C .. rev-parse HEAD > SOURCE-COMMIT.txt
+      - name: Installable APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: five-products-apks
+          path: product-apks/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Preserve test and lint evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: five-products-test-evidence
+          path: |
+            projects/build-ci.log
+            projects/logic/build/test-results/test/*.xml
+            projects/*/build/test-results/testDebugUnitTest/*.xml
+            projects/*/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+          retention-days: 14
