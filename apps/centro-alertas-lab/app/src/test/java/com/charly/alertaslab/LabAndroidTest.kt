@@ -67,14 +67,14 @@ class LabAndroidTest {
         d.purge(now+2004); assertEquals(2000,d.all(now+2004).size)
         add(d,posted=now+2005,received=now+2005); assertEquals(2000,d.all(now+2005).size)
     }
-    @Test fun plainNotificationExtracted() { val p=NotificationParts.extract(builder().setContentTitle("T").setContentText("B").build()).single(); assertEquals("T",p.title); assertEquals("B",p.body) }
-    @Test fun bigTextPreferred() { val n=builder().setContentTitle("T").setContentText("short").setStyle(Notification.BigTextStyle().bigText("long full text")).build(); assertEquals("long full text",NotificationParts.extract(n).single().body) }
-    @Test fun inboxLinesKept() { val n=builder().setContentTitle("T").setContentText("summary").setStyle(Notification.InboxStyle().addLine("one").addLine("two")).build(); assertEquals("one\ntwo",NotificationParts.extract(n).single().body) }
+    @Test fun plainNotificationExtracted() { val p=NotificationParts.extract(context, builder().setContentTitle("T").setContentText("B").build()).single(); assertEquals("T",p.title); assertEquals("B",p.body) }
+    @Test fun bigTextPreferred() { val n=builder().setContentTitle("T").setContentText("short").setStyle(Notification.BigTextStyle().bigText("long full text")).build(); assertEquals("long full text",NotificationParts.extract(context, n).single().body) }
+    @Test fun inboxLinesKept() { val n=builder().setContentTitle("T").setContentText("summary").setStyle(Notification.InboxStyle().addLine("one").addLine("two")).build(); assertEquals("one\ntwo",NotificationParts.extract(context, n).single().body) }
     @Test fun messagingPartsAndStableOccurrence() {
         val sender=Person.Builder().setName("Sender").build()
         val style=Notification.MessagingStyle(Person.Builder().setName("Me").build()).setConversationTitle("Group").setGroupConversation(true)
             .addMessage("one",100L,sender).addMessage("one",100L,sender)
-        val parts=NotificationParts.extract(builder().setStyle(style).build())
+        val parts=NotificationParts.extract(context, builder().setStyle(style).build())
         assertEquals(2,parts.size); assertEquals("Group",parts[0].title)
         assertEquals(listOf(0,1),parts.map { it.occurrence }); assertEquals("Sender: one",parts[0].body)
     }
@@ -82,7 +82,7 @@ class LabAndroidTest {
         val sender=Person.Builder().setName("Sender").build()
         val style=Notification.MessagingStyle(Person.Builder().setName("Me").build())
             .addHistoricMessage(Notification.MessagingStyle.Message("history",1L,sender)).addMessage("current",2L,sender)
-        val parts=NotificationParts.extract(builder().setStyle(style).build())
+        val parts=NotificationParts.extract(context, builder().setStyle(style).build())
         assertEquals(1,parts.size); assertTrue(parts.single().body.contains("current"))
     }
     @Test fun separateApplicationAndNoRuntimePermissions() {

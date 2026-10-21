@@ -1,6 +1,7 @@
 package com.charly.alertaslab
 
 import android.app.Notification
+import android.content.Context
 import android.content.Intent
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -35,7 +36,7 @@ class LabListener : NotificationListenerService() {
         val key = sbn.key
         val posted = sbn.postTime
         val received = System.currentTimeMillis()
-        val parts = try { NotificationParts.extract(sbn.notification) } catch (_: Exception) { return }
+        val parts = try { NotificationParts.extract(this, sbn.notification) } catch (_: Exception) { return }
         worker.execute {
             try {
                 synchronized(LabStore.writeLock) {
@@ -60,10 +61,11 @@ data class NotificationPart(val title: String, val body: String, val timestamp: 
                             val occurrence: Int = 0, val style: String = "plain")
 
 object NotificationParts {
-    fun extract(n: Notification): List<NotificationPart> {
+    fun extract(context: Context, n: Notification): List<NotificationPart> {
         val e = n.extras
         val title = e.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
-        val style = Notification.MessagingStyle.extractMessagingStyleFromNotification(n)
+        val style = try { Notification.Builder.recoverBuilder(context, n).style as? Notification.MessagingStyle }
+            catch (_: Exception) { null }
         val messages = style?.messages.orEmpty().takeLast(50)
         if (messages.isNotEmpty()) {
             val conversation = style?.conversationTitle?.toString()?.takeIf { it.isNotBlank() } ?: title
