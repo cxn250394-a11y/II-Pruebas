@@ -8,7 +8,7 @@ import mx.charly.logic.Wave
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
-/** Experimental PCM-only route. Never silently falls back to the speaker or standard mixer. */
+/** Experimental PCM-only route. Requires the USB route to be observed before sending PCM. */
 class UsbWave(private val context:Context,private val status:(String)->Unit){
  private val executor=Executors.newSingleThreadExecutor();private val generation=AtomicInteger()
  @Volatile private var track:AudioTrack?=null
@@ -35,14 +35,27 @@ class UsbWave(private val context:Context,private val status:(String)->Unit){
     audio=AudioTrack.Builder().setAudioAttributes(attributes).setAudioFormat(format).setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(maxOf(min,f.frameBytes*4096)).build()
     val player=audio!!;require(player.state==AudioTrack.STATE_INITIALIZED);require(player.setPreferredDevice(device)){"No se pudo fijar la salida USB"};track=player
     player.play()
+    val routeDeadline=System.nanoTime()+1_000_000_000L
+    while(generation.get()==token && player.routedDevice==null && System.nanoTime()<routeDeadline) Thread.sleep(10)
+    require(generation.get()==token){"Cancelado"}
+    require(player.routedDevice?.id==device.id){"No se confirmó la ruta USB; no se enviaron muestras"}
     status("Solicitud BIT_PERFECT aceptada por Android · WAV ${f.rate} Hz / ${f.bits} bits. Sin DSP ni ajuste de volumen en la app. Pendiente medición física.")
     val bytes=ByteArray(f.frameBytes*2048);var left=f.dataBytes
     while(left>0&&generation.get()==token){
      require(am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any{it.id==device.id}){"USB desconectado: reproducción detenida"}
-     val route=player.routedDevice;if(route!=null)require(route.id==device.id){"La ruta cambió; no se permite fallback"}
+     val route=player.routedDevice;require(route?.id==device.id){"La ruta cambió; reproducción detenida"}
      val desired=minOf(bytes.size.toLong(),left).toInt();var got=0
      while(got<desired){val n=input.read(bytes,got,desired-got);require(n>0){"Datos WAV truncados"};got+=n}
      var written=0;while(written<got&&generation.get()==token){val n=player.write(bytes,written,got-written,AudioTrack.WRITE_BLOCKING);require(n>0){"Fallo de escritura de audio"};written+=n};left-=got
+    }
+    if(generation.get()==token){
+     val expectedFrames=f.dataBytes/f.frameBytes
+     val deadline=System.nanoTime()+5_000_000_000L
+     while(generation.get()==token && (player.playbackHeadPosition.toLong() and 0xffffffffL)<expectedFrames && System.nanoTime()<deadline){
+      require(player.routedDevice?.id==device.id){"La ruta cambió durante el cierre de audio"}
+      Thread.sleep(10)
+     }
+     if(generation.get()==token)require((player.playbackHeadPosition.toLong() and 0xffffffffL)>=expectedFrames){"La cola de audio no terminó de vaciarse"}
     }
     if(generation.get()==token)status("WAV terminado. Solicitud de ruta bit-perfect utilizada; no certificada por medición externa.")
    }}catch(e:Exception){if(generation.get()==token)status(e.message?:"No se pudo abrir la ruta USB")}

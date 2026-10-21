@@ -54,13 +54,13 @@ class AudioActivity:Screen(){
  private fun playLibrary(index:Int){val p=controller?:run{toast("Espera a que conecte el servicio de audio");return};usb.stop();p.setMediaItems((0 until library.length()).map{item(library.getJSONObject(it))},index,0);p.prepare();p.play();home()}
  private fun playUrl(name:String,url:String){val uri=Uri.parse(url);if(uri.scheme!="https"||uri.host.isNullOrBlank()||uri.userInfo!=null){toast("Solo streams HTTPS sin credenciales en URL");return};usb.stop();val p=controller?:return;p.setMediaItem(MediaItem.Builder().setUri(uri).setMediaMetadata(MediaMetadata.Builder().setTitle(name).build()).build());p.prepare();p.play();home()}
  @Deprecated("Activity compatibility") override fun onActivityResult(request:Int,result:Int,data:Intent?){super.onActivityResult(request,result,data);if(result!=RESULT_OK||data==null)return
-  if(request==21){val uri=data.data?:return;confirm("Prueba USB bit-perfect","Solo WAV PCM16/24/32. Baja el volumen en tu DAC antes de probar: esta ruta no atenúa digitalmente. Se detiene al salir de la app y no cambia al altavoz si falla."){controller?.pause();usbScreen();usb.play(uri)};return}
+  if(request==21){val uri=data.data?:return;confirm("Prueba USB bit-perfect","Solo WAV PCM16/24/32. Baja el volumen en tu DAC antes de probar: esta ruta no atenúa digitalmente. Se detiene al salir de la app y no cambia deliberadamente al altavoz si falla."){controller?.pause();usbScreen();usb.play(uri)};return}
   if(request!=20||!healthy)return
   val uris=if(data.clipData!=null)(0 until data.clipData!!.itemCount).map{data.clipData!!.getItemAt(it).uri}else listOfNotNull(data.data)
   try{val next=JSONArray(library.toString());val known=(0 until next.length()).map{next.getJSONObject(it).getString("uri")}.toMutableSet()
    for(uri in uris.take(2000)){if(next.length()>=2000)break;if(!known.add(uri.toString()))continue
-    val flags=data.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION
-    contentResolver.takePersistableUriPermission(uri,flags)
+    require((data.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION)!=0){"Sin permiso de lectura"}
+    contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)
     val title=contentResolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use{if(it.moveToFirst())it.getString(0)else "Audio"}?:"Audio"
     next.put(JSONObject().put("uri",uri.toString()).put("title",title))
    };saved.write(next);library=next;libraryScreen()

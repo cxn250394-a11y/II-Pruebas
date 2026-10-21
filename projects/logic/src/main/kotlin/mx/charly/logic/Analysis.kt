@@ -4,7 +4,11 @@ import java.math.BigDecimal
 
 object Numbers {
     fun number(s:String):Double?=s.trim().replace(',','.').toDoubleOrNull()?.takeIf{it.isFinite()}
-    fun decimal(s:String):String=BigDecimal(s.trim().replace(',','.')).stripTrailingZeros().toPlainString()
+    fun decimal(s:String):String {
+        val value=s.trim().replace(',','.')
+        require(value.matches(Regex("[-+]?[0-9]{1,6}(\\.[0-9]{1,6})?"))){"Línea decimal fuera de formato"}
+        return BigDecimal(value).stripTrailingZeros().toPlainString()
+    }
     fun odds(s:String):Double?=number(s)?.takeIf{it>1.0 && it<=10000.0}
     fun ev(probability:Double,odds:Double):Double { require(probability.isFinite()&&probability in 0.0..1.0&&odds.isFinite()&&odds>1);return probability*odds-1 }
     fun noVig(odds:List<Double>):List<Double>{require(odds.size>=2&&odds.all{it.isFinite()&&it>1});val sum=odds.sumOf{1/it};return odds.map{1/it/sum}}
