@@ -1,0 +1,113 @@
+name: Five apps | Aural pilot tests and APK
+on:
+  pull_request:
+    paths:
+      - 'apps/aural/**'
+      - 'shared/audio-core/**'
+      - 'shared/sports-core/**'
+      - 'tools/generate-aural-demo.py'
+      - 'scripts/check-aural.py'
+      - '.github/workflows/aural.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: aural-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    if: github.repository == 'cxn250394-a11y/II-Pruebas'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: apps/aural
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: false
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Original test audio and isolation contracts
+        run: |
+          python3 ../../tools/generate-aural-demo.py
+          python3 ../../scripts/check-aural.py
+      - name: JVM tests, Android simulation, lint and both APKs
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace :core:test :sports:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest 2>&1 | tee build-ci.log
+      - name: Signature and provenance
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/aural-delivery"
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/aural-delivery/Aural-v0.1-pilot.apk"
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "$GITHUB_WORKSPACE/aural-delivery/Aural-androidTest.apk"
+          cd "$GITHUB_WORKSPACE/aural-delivery"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs Aural-v0.1-pilot.apk > APK-VERIFY.txt
+          sha256sum Aural-v0.1-pilot.apk > Aural-v0.1-pilot.apk.sha256
+          git -C "$GITHUB_WORKSPACE" rev-parse HEAD > SOURCE-COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Aural-v0.1-build
+          path: aural-delivery/
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Aural-JVM-lint-evidence
+          path: |
+            shared/audio-core/build/test-results/test/
+            shared/sports-core/build/test-results/test/
+            apps/aural/app/build/test-results/testDebugUnitTest/
+            apps/aural/app/build/reports/lint-results-debug.*
+            apps/aural/build-ci.log
+          if-no-files-found: warn
+          retention-days: 14
+  emulator:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Aural-v0.1-build
+          path: aural-delivery
+      - name: Enable KVM for this ephemeral runner
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            adb install aural-delivery/Aural-v0.1-pilot.apk
+            adb install aural-delivery/Aural-androidTest.apk
+            mkdir -p android-evidence
+            adb shell am instrument -w -r com.charly.aural.test/androidx.test.runner.AndroidJUnitRunner > android-evidence/instrumentation.txt 2>&1
+            cat android-evidence/instrumentation.txt
+            adb pull /sdcard/Android/data/com.charly.aural/files/aural-playback.png android-evidence/aural-playback.png || true
+            adb logcat -d -s AndroidRuntime:E > android-evidence/android-runtime-errors.txt
+            grep -q 'OK (1 test)' android-evidence/instrumentation.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Aural-Android-emulator-evidence
+          path: android-evidence/
+          if-no-files-found: warn
+          retention-days: 14
