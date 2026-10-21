@@ -1,0 +1,71 @@
+name: Alertas LAB 0.2 | Tests y APK
+on:
+  pull_request:
+    paths:
+      - 'apps/centro-alertas-lab/**'
+      - 'shared/alerts-core/**'
+      - 'scripts/check-lab.py'
+      - '.github/workflows/alertas-lab.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: alertas-lab-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-build:
+    if: github.repository == 'cxn250394-a11y/II-Pruebas'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: apps/centro-alertas-lab
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: false
+      - name: SDK 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Privacy and isolation contracts
+        run: python3 ../../scripts/check-lab.py
+      - name: Core, Android JVM tests, lint and APK
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug 2>&1 | tee build-ci.log
+      - name: Verify signed APK and record provenance
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/lab-delivery"
+          cp app/build/outputs/apk/debug/app-debug.apk "${GITHUB_WORKSPACE}/lab-delivery/Centro-Alertas-LAB-v0.2.apk"
+          cd "${GITHUB_WORKSPACE}/lab-delivery"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs Centro-Alertas-LAB-v0.2.apk > APK-VERIFY.txt
+          sha256sum Centro-Alertas-LAB-v0.2.apk > Centro-Alertas-LAB-v0.2.apk.sha256
+          git -C "$GITHUB_WORKSPACE" rev-parse HEAD > SOURCE-COMMIT.txt
+      - name: APK installable
+        uses: actions/upload-artifact@v4
+        with:
+          name: Centro-Alertas-LAB-v0.2-apk
+          path: lab-delivery/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Test and lint evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alertas-LAB-test-evidence
+          path: |
+            shared/alerts-core/build/test-results/test/
+            apps/centro-alertas-lab/app/build/test-results/testDebugUnitTest/
+            apps/centro-alertas-lab/app/build/reports/lint-results-debug.html
+            apps/centro-alertas-lab/build-ci.log
+          if-no-files-found: warn
+          retention-days: 14
