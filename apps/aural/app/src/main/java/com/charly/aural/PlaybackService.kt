@@ -2,6 +2,7 @@ package com.charly.aural
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Process
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -22,6 +23,12 @@ import com.google.common.util.concurrent.ListenableFuture
 @UnstableApi
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    private val consentListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+        if (key == "radio_consent" && !prefs.getBoolean("radio_consent", false)) {
+            // Enforce revocation in the service even while the Activity controller is disconnected.
+            session?.player?.let { it.stop(); it.clearMediaItems() }
+        }
+    }
     override fun onCreate() {
         super.onCreate()
         val http = DefaultHttpDataSource.Factory().setUserAgent("AuralPilot/0.1")
@@ -49,10 +56,12 @@ class PlaybackService : MediaSessionService() {
                     return Futures.immediateFuture(accepted)
                 }
             }).build()
+        getSharedPreferences("aural_library", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(consentListener)
     }
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
         if (controllerInfo.uid == Process.myUid() || controllerInfo.isTrusted) session else null
     override fun onDestroy() {
+        getSharedPreferences("aural_library", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(consentListener)
         session?.let { it.player.release(); it.release() }
         session = null
         super.onDestroy()

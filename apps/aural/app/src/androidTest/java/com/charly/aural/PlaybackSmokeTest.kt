@@ -11,7 +11,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 
-/** Executes actual UI/controller/service/decoder on Android. No accounts, network or user files. */
+/** Actual UI/controller/service/decoder on Android. No accounts, external streams or user files. */
 @RunWith(AndroidJUnit4::class)
 class PlaybackSmokeTest {
     @Test fun originalAudioPlaysPausesAndSurvivesBackground() {
@@ -38,9 +38,17 @@ class PlaybackSmokeTest {
         Thread.sleep(800)
         context.startActivity(Intent(launch).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
         assertTrue("Playback survives controller disconnect",device.wait(Until.hasObject(By.textStartsWith("Reproduciendo")),5000))
-        val screenshot=File(context.getExternalFilesDir(null),"aural-playback.png")
-        assertTrue("Actual Android screenshot",device.takeScreenshot(screenshot))
+        assertTrue(device.takeScreenshot(File(context.getExternalFilesDir(null),"aural-playback.png")))
         device.findObject(By.text("Detener")).click()
         assertTrue("Stop clears queue",device.wait(Until.hasObject(By.textContains("Nada en cola")),5000))
+
+        // Revocation must work in the service, with no Activity/UI controller sending a stop command.
+        instrumentation.runOnMainSync { LibraryStore(context).allowNetwork(true) }
+        device.findObject(By.textStartsWith("Probar sonido")).click()
+        assertTrue(device.wait(Until.hasObject(By.textStartsWith("Reproduciendo")),5000))
+        device.pressHome(); Thread.sleep(500)
+        instrumentation.runOnMainSync { LibraryStore(context).allowNetwork(false) }
+        context.startActivity(Intent(launch).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+        assertTrue("Revocation clears service queue while Activity is away",device.wait(Until.hasObject(By.textContains("Nada en cola")),5000))
     }
 }
