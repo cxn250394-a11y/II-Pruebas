@@ -1,0 +1,18 @@
+II Pruebas Android alpha products — third-party notices
+
+These original apps are not affiliated with Nicegram, USB Audio Player PRO, OddsJam, Action Network, Vector Unit or Nintendo.
+
+Components used across the suite (not every component is in every app):
+- Kotlin and kotlinx.coroutines: Copyright JetBrains and contributors. Apache License 2.0. https://github.com/JetBrains/kotlin and https://github.com/Kotlin/kotlinx.coroutines
+- AndroidX / Media3: Copyright The Android Open Source Project. Apache License 2.0. https://github.com/androidx/media
+- TDL Coroutines: Copyright Georgii Ippolitov and contributors. Apache License 2.0. https://github.com/g000sha256/tdl-coroutines
+- TDLib: Copyright Telegram and contributors. Boost Software License 1.0. https://github.com/tdlib/td
+- libGDX: Copyright Mario Zechner and contributors. Apache License 2.0. https://github.com/libgdx/libgdx
+- Native components bundled by these upstream libraries retain their original licenses and notices.
+
+Service/data attribution:
+- OpenLigaDB data: community-maintained, Open Database License (ODbL), https://www.openligadb.de/lizenz . Locally derived statistics retain this attribution. CSV data supplied by users is not independently verified.
+- Radio Browser station directory: https://www.radio-browser.info/ . Radio streams are served by their respective broadcasters and retain their rights. This app does not redistribute recordings.
+- Telegram protocol and service: https://core.telegram.org/api/terms . No service credentials are distributed with this app.
+
+The software is experimental and supplied without a guarantee of fitness, uninterrupted service, trading results or bit-perfect physical output. See the repository for source and explicit acceptance gaps. Standard license texts accompany this notice in the APK assets.
