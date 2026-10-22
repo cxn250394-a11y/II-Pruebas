@@ -55,9 +55,10 @@ class ConnectionService : Service() {
             val selected = s.chats[m.chatId] ?: return
             if (selected.type !is ChatTypeSupergroup ||
                 (watch == PickWatchMode.DIRECT_CHANNEL && !(selected.type as ChatTypeSupergroup).isChannel)) return
-            if (quiet || s.visibleChat == m.chatId) return
+            if (quiet || s.visibleChat == m.chatId || m.isFromOffline) return
             val body = TelegramSession.pickText(m.content)
-            val hasImage = m.content is MessagePhoto || m.content is MessageDocument
+            val hasImage = m.content is MessagePhoto ||
+                (m.content is MessageDocument && m.content.document.mimeType.startsWith("image/"))
             val plan = PickWatchRules.propose(
                 watch, selected.title, body, hasImage, m.date.toLong(),
                 System.currentTimeMillis() / 1000, m.isOutgoing, m.editDate > 0
