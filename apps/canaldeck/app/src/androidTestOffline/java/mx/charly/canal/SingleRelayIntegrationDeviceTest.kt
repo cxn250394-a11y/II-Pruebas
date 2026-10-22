@@ -13,6 +13,7 @@ import java.util.UUID
 
 /** The integration controller and real Android SQLite; the only output port is a recording Fake. */
 @RunWith(AndroidJUnit4::class)
+/** Fake integration evidence for the offline artifact, with no account or provider calls. */
 class SingleRelayIntegrationDeviceTest {
     private val context: Context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val id = UUID.randomUUID().toString()

@@ -1,30 +1,36 @@
-# CanalDeck 0.4.2 — candidato de integración individual offline
+# CanalDeck 0.4.3 — variantes normal y laboratorio offline
 
-Este nuevo hijo de PR #9 añade un controlador asíncrono para referencias y fotos
-individuales, con puerto preparado sobre el cliente TDLib existente. Usa su mismo
-flujo de updates; no crea otro lector. La salida real sigue compilada OFF, sin
-Internet ni posibilidad de iniciar sesión en el APK de laboratorio.
+Este candidato separa la app principal del laboratorio mediante flavors reales.
+Parte de PR #10 `6eb560a`; permanecen congelados #8 `3b32cb7`, #9 `6a40b20`, #10
+e Info #33 `e4a99e3` conforme a Info main `91993e4`.
 
-PR #8 `3b32cb7`, PR #9 `6a40b20` e Info PR #33 `e4a99e3` permanecen congelados.
-[Contrato y límites de la integración](docs/SINGLE_RELAY_EVIDENCIA_Y_LIMITES.md) y
-[procedimiento futuro de activación y reversa](docs/SINGLE_RELAY_ACTIVACION_Y_REVERSA.md).
-La integración nueva se prueba automáticamente con Fake; la pantalla de ensayo
-heredada sigue ejercitando el protocolo de #9. **ACK real no verificado; álbum
-vivo HOLD; foto sin texto no acredita un pick ni un tipster.**
+| Flavor | Paquete | Internet y cuenta | Salida automática |
+|---|---|---|---|
+| `normal` | `mx.charly.canal` | Conserva la capacidad del cliente principal; no se conecta una cuenta en pruebas | Compilada OFF |
+| `offline` | `mx.charly.canal.offline` | Sin Internet y con inicio de sesión bloqueado | Compilada OFF |
 
-El laboratorio heredado de PR #9 fue hijo de PR #8, con HEAD `3b32cb7` congelado;
-tampoco cambió Info PR #33
-`e4a99e3`. El APK de este carril usa **`mx.charly.canal.offline`**, carece de permiso
-de Internet, bloquea la construcción de una sesión y conserva el fusible de salida
-real en `false`. Su inicio solo ofrece ejemplos y el ensayo ficticio. No se instala
-encima del cliente principal ni migra sus datos.
+La matriz se aplica a debug y release. El código conserva el único cliente TDLib
+y su colector; separar variantes no crea otra sesión. Los datos privados de cada
+paquete no se copian, migran o borran. Mantener el paquete principal tampoco
+demuestra compatibilidad con la firma o datos del APK instalado en el teléfono.
 
-Ruta para el dueño: [ensayo POCO/HyperOS](docs/POCO_HYPEROS_VALIDACION_OFFLINE.md).
-Contrato nuevo: [álbumes y evidencia del proveedor](docs/ALBUM_PROVIDER_PROOF.md),
-[protocolo asíncrono](docs/ASYNC_RELAY_PROTOCOL.md). **Álbum vivo: HOLD;
-ACK real: no verificado.** Ningún timeout ni contador de diez elementos acredita
-un álbum completo. Los párrafos siguientes describen las capacidades heredadas
-del cliente base, que no están habilitadas como sesión en este APK de ensayo.
+[Identidad, datos, pruebas y ruta mínima](docs/VARIANTES_IDENTIDAD_DATOS_Y_RUTA_MINIMA.md)
+es la guía de este carril. **Ninguna acción del dueño es necesaria ahora**: no se
+solicita instalar ni iniciar sesión. Los artefactos `normal` no son permiso para
+usar una cuenta; release no tiene firma de distribución configurada.
+
+El controlador de singles y la pantalla Fake heredados de #10 se conservan.
+[Contrato de singles](docs/SINGLE_RELAY_EVIDENCIA_Y_LIMITES.md) y
+[propuesta de activación y reversa](docs/SINGLE_RELAY_ACTIVACION_Y_REVERSA.md)
+describen sus antecedentes; donde hablan de un único APK offline, corresponde al
+carril #10 congelado. La selección normal/offline actual se rige por la guía de
+variantes anterior. **ACK real no verificado; álbum vivo HOLD; foto sin texto no
+acredita un pick ni un tipster.** P2-9B/P2-9C siguen pendientes; este cambio no
+ratifica el protocolo de envío.
+
+Los párrafos siguientes describen capacidades del cliente base. La variante
+offline mantiene su ensayo sin cuenta; usar capacidades reales de normal exige
+la versión revisada y el OK que corresponda.
 
 Cliente Android nativo con TDLib. No es Nicegram, no está afiliado a Telegram y no es el lector Centro de Alertas. Una cuenta real con identidad propia de aplicación. Código recuperado de `projects/canal` (PR #3) y aislado aquí; ningún otro producto se modifica.
 
@@ -59,23 +65,24 @@ Java 17, Gradle 9.6.1, AGP 9.2.1, Kotlin 2.4.10, compileSdk 37 y targetSdk 35; d
 
 ```sh
 cd apps/canaldeck
-gradle :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest
+gradle :app:testNormalDebugUnitTest :app:testOfflineDebugUnitTest
+gradle :app:assembleNormalDebug :app:assembleOfflineDebug :app:assembleNormalRelease :app:assembleOfflineRelease
 ```
 
-El workflow dedicado genera una APK debug, checksum, identidad de commit y reportes. Ejecuta pruebas de reglas/organización/UI en JVM y pruebas de Android real emulado para Keystore, organización y carga nativa TDLib sin credenciales. Incluye captura de pantalla de bienvenida; no captura sesiones privadas.
+El workflow del candidato debe vincular pruebas y artefactos de cada variante al
+HEAD exacto, incluidos manifiestos debug/release y aislamiento de datos en
+emulador. Los resultados válidos son los del nuevo PR/CI; no se reutiliza la CI
+del HEAD congelado de #10. Las pruebas no conectan una cuenta ni envían mensajes.
 
 Firma debug temporal del runner: no es una clave de producción persistente. Antes de actualizaciones permanentes debe configurarse una firma privada mantenida; no se publica ningún keystore. No se promete actualización sobre una APK de otra firma. La app coexiste con Telegram/Nicegram y Centro de Alertas.
 
-## Activación del cliente base — no disponible en este APK offline
+## Ruta posterior
 
-Para esta entrega sigue únicamente la [guía de ensayo](docs/POCO_HYPEROS_VALIDACION_OFFLINE.md).
-Los pasos heredados siguientes requieren otra compilación revisada y su propia
-autorización; el candidato actual no inicia sesión.
-
-1. Registrar aplicación propia en `https://my.telegram.org/apps` (API development tools), o usar una identidad propia ya creada. Título CanalDeck, short name canaldeckpersonal, Android.
-2. En CanalDeck → Empezar, introducir `api_id` y `api_hash` locales.
-3. Autorizar conexión, introducir teléfono y los pasos que Telegram solicite. No compartir códigos/contraseña/identidad con terceros.
-4. Mantener pulsado un canal para favorito/carpeta/avisos. Ajustes permite desconectar o cerrar solo esta sesión.
+La [guía de variantes](docs/VARIANTES_IDENTIDAD_DATOS_Y_RUTA_MINIMA.md) separa
+laboratorio, observación con la sesión principal y una futura prueba supervisada
+de referencias/fotos. No hay procedimiento físico que ejecutar ahora. Cada fase
+real necesita revisión y su OK separado; no usar `.offline` para abrir un segundo
+lector ni desinstalar una app para resolver una firma incompatible.
 
 ## Referencias y licencias
 

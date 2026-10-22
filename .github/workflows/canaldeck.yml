@@ -11,9 +11,9 @@ concurrency:
   group: canaldeck-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  build:
+  build-and-device:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: apps/canaldeck
@@ -52,63 +52,52 @@ jobs:
         run: |
           python3 scripts/check-source.py
           python3 scripts/check-relay-offline.py
-      - name: Tests, lint, APK and instrumentation test package
+      - name: Both JVM suites, four APK variants and two instrumentation packages
         run: |
           set -o pipefail
-          gradle --no-daemon --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest 2>&1 | tee build-ci.log
+          gradle --no-daemon --stacktrace \
+            :app:testNormalDebugUnitTest :app:testOfflineDebugUnitTest \
+            :app:lintNormalDebug :app:lintOfflineDebug :app:lintNormalRelease :app:lintOfflineRelease \
+            :app:assembleNormalDebug :app:assembleOfflineDebug :app:assembleNormalRelease :app:assembleOfflineRelease \
+            :app:assembleNormalDebugAndroidTest :app:assembleOfflineDebugAndroidTest 2>&1 | tee build-ci.log
           python3 scripts/report-jvm.py
-      - name: Verify APK
-        run: |
-          mkdir -p ../../canal-apk
-          cp app/build/outputs/apk/debug/app-debug.apk ../../canal-apk/CanalDeck-v0.4.2-integration-offline-beta.apk
-          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk ../../canal-apk/tests.apk
-          cd ../../canal-apk
-          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs CanalDeck-v0.4.2-integration-offline-beta.apk > APK-VERIFY.txt
-          "$ANDROID_HOME/build-tools/37.0.0/aapt2" dump badging CanalDeck-v0.4.2-integration-offline-beta.apk > APK-MANIFEST.txt
-          grep -q "package: name='mx.charly.canal.offline'" APK-MANIFEST.txt
-          ! grep -q 'android.permission.INTERNET' APK-MANIFEST.txt
-          sha256sum CanalDeck-v0.4.2-integration-offline-beta.apk > SHA256SUMS.txt
-          git -C .. rev-parse HEAD > SOURCE-COMMIT.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: canaldeck-apk
-          path: canal-apk/
-          if-no-files-found: error
-          retention-days: 14
-      - name: Evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: canaldeck-tests
-          path: |
-            apps/canaldeck/build-ci.log
-            apps/canaldeck/app/build/test-results/testDebugUnitTest/*.xml
-            apps/canaldeck/app/build/reports/lint-results-debug.*
-            apps/canaldeck/evidence/*.json
-          retention-days: 14
-  device-tests:
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: actions/download-artifact@v4
-        with:
-          name: canaldeck-apk
-          path: canal-apk
-      - name: Require APK from this exact source
+          python3 scripts/verify-variants.py
+          git -C ../.. rev-parse HEAD > app/build/variant-audit/SOURCE-COMMIT.txt
+      - name: Package offline APK only
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          test "$(cat canal-apk/SOURCE-COMMIT.txt)" = "$EXPECTED_HEAD"
+          test "$(git -C ../.. rev-parse HEAD)" = "$EXPECTED_HEAD"
+          mkdir -p ../../canal-offline-apk
+          cp app/build/outputs/apk/offline/debug/app-offline-debug.apk ../../canal-offline-apk/CanalDeck-v0.4.3-offline-beta.apk
+          cp app/build/outputs/apk/androidTest/offline/debug/app-offline-debug-androidTest.apk ../../canal-offline-apk/tests.apk
+          git -C ../.. rev-parse HEAD > ../../canal-offline-apk/SOURCE-COMMIT.txt
+          cd ../../canal-offline-apk
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs CanalDeck-v0.4.3-offline-beta.apk > APK-VERIFY.txt
+          "$ANDROID_HOME/build-tools/37.0.0/aapt2" dump badging CanalDeck-v0.4.3-offline-beta.apk > APK-MANIFEST.txt
+          grep -q "package: name='mx.charly.canal.offline'" APK-MANIFEST.txt
+          ! grep -q 'android.permission.INTERNET' APK-MANIFEST.txt
+          sha256sum CanalDeck-v0.4.3-offline-beta.apk tests.apk > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: canaldeck-offline-apk
+          path: canal-offline-apk/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Four-variant audit reports without APK binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: canaldeck-variant-audit
+          path: apps/canaldeck/app/build/variant-audit/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Require runner-built APKs from this exact source
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git -C ../.. rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(cat ../../canal-offline-apk/SOURCE-COMMIT.txt)" = "$EXPECTED_HEAD"
+          test "$(cat app/build/variant-audit/SOURCE-COMMIT.txt)" = "$EXPECTED_HEAD"
           echo "DEVICE_SOURCE_HEAD=$EXPECTED_HEAD"
       - name: KVM
         run: |
@@ -130,4 +119,16 @@ jobs:
         with:
           name: canaldeck-emulator
           path: canal-device/
+          retention-days: 14
+      - name: JVM, lint and build evidence for both flavors
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canaldeck-tests
+          path: |
+            apps/canaldeck/build-ci.log
+            apps/canaldeck/app/build/test-results/testNormalDebugUnitTest/*.xml
+            apps/canaldeck/app/build/test-results/testOfflineDebugUnitTest/*.xml
+            apps/canaldeck/app/build/reports/lint-results-*.*
+            apps/canaldeck/evidence/*.json
           retention-days: 14
