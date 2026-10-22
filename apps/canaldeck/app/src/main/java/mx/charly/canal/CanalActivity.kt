@@ -258,10 +258,11 @@ class CanalActivity : Screen() {
     private fun organize(id:Long){
         if(TelegramSession.current?.ready!=true)return
         dialog().setTitle(TelegramSession.current?.chats?.get(id)?.title ?: "Organizar")
-            .setItems(arrayOf(if(org.favorite(id))"Quitar favorito"else"Marcar favorito","Mover a carpeta","Configurar avisos de este chat")){_,i->when(i){
+            .setItems(arrayOf(if(org.favorite(id))"Quitar favorito"else"Marcar favorito","Mover a carpeta","Configurar avisos de este chat","Pick$ · vigilar canal / tipsters")){_,i->when(i){
                 0->{org.toggleFavorite(id);refreshChats()}
                 1->{val fs=listOf("" to "Sin carpeta")+org.folders();dialog().setTitle("Carpeta local").setItems(fs.map{it.second}.toTypedArray()){_,n->org.assign(id,fs[n].first);refreshChats()}.setNegativeButton("Cancelar",null).show()}
-                else->noticeSettings(id)
+                2->noticeSettings(id)
+                else->pickWatchSettings(id)
             }}.show()
     }
     private fun noticeSettings(id:Long){
@@ -281,6 +282,64 @@ class CanalActivity : Screen() {
                 try{startActivity(i)}catch(_:Exception){toast("El canal de Android aparece después de su primer aviso")}
             }.show()
     }
+    /** Owner chooses an observed chat ID; never subscribe by a name guessed from captions. */
+    private fun pickWatchSettings(id: Long) {
+        val chat = TelegramSession.current?.chats?.get(id) ?: return
+        if (chat.type !is ChatTypeSupergroup) {
+            toast("Pick$ selectivo solo admite canales y grupos, no chats privados")
+            return
+        }
+        val isChannel = (chat.type as ChatTypeSupergroup).isChannel
+        val choices = listOf(
+            "Apagadas (predeterminado)",
+            "Canal directo · todas las nuevas publicaciones",
+            "Grupo de reventa · solo mis 12 tipsters"
+        )
+        val box = column().apply { setPadding(dp(20), 0, dp(20), 0) }
+        val modes = RadioGroup(this)
+        choices.forEachIndexed { i, title ->
+            modes.addView(RadioButton(this).apply {
+                this.id = 5100 + i
+                text = title
+                setTextColor(Color.WHITE)
+                if (i == 1 && !isChannel) isEnabled = false
+            })
+        }
+        modes.check(5100 + org.pickWatchMode(id).ordinal)
+        box.addView(modes)
+        box.addView(text(
+            "El aviso mostrará Canal o Tipster, hora original CDMX y enlace de Telegram. " +
+                "La reventa exige el nombre escrito en el mensaje o pie de foto: no inventa autores leyendo imágenes.",
+            12f, soft
+        ))
+        box.addView(text(
+            "12 permitidos: " + PickWatchRules.allowedTipsters.joinToString(" · "),
+            11f, soft
+        ))
+        box.addView(text(
+            "Solo notificaciones locales de CanalDeck con sesión iniciada. No reenvía a Pick$, " +
+                "no salta restricciones de Telegram ni enciende Ferrari/G4.",
+            11f, soft
+        ))
+        dialog().setTitle("Pick$ · ${chat.title}").setView(box)
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("Guardar") { _, _ ->
+                val newMode = PickWatchMode.entries.getOrElse(modes.checkedRadioButtonId - 5100) {
+                    PickWatchMode.OFF
+                }
+                if (newMode == PickWatchMode.DIRECT_CHANNEL && !isChannel) {
+                    toast("Elige reventa para grupos; canal directo exige un canal real")
+                } else {
+                    org.pickWatchMode(id, newMode)
+                    ConnectionService.current?.clear(id)
+                    if (newMode != PickWatchMode.OFF && Build.VERSION.SDK_INT >= 33) {
+                        requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 9)
+                    }
+                    toast(if (newMode == PickWatchMode.OFF) "Pick$ apagado en este chat"
+                          else "Pick$ selectivo activado solo en esta conversación")
+                }
+            }.show()
+    }
     private fun settings(){
         page("settings","Ajustes","Tu sesión y tu privacidad")
         val s=TelegramSession.current
@@ -297,6 +356,7 @@ class CanalActivity : Screen() {
         }
         button("Permisos y notificaciones de Android"){try{startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName))}catch(_:Exception){toast("Revisa CanalDeck en Ajustes de Android")}}
         label("Para activar un canal: mantén pulsado el chat → Configurar avisos. Todos empiezan apagados. La vista previa está oculta de fábrica.",13f,soft)
+        label("Para avisos Pick$ selectivos: mantén pulsado el canal o grupo → Pick$ · vigilar canal / tipsters. Todo empieza apagado.",13f,soft)
         card("Conexión visible, no garantía de entrega instantánea","No hay Firebase/FCM configurado. Esta beta usa una conexión visible en segundo plano; HyperOS puede cerrarla o retrasarla. No reemplaza todavía las alertas del cliente oficial.")
         if(s!=null){button("Desconectar CanalDeck"){stopService(Intent(this,ConnectionService::class.java));home()};button("Cerrar únicamente esta sesión"){confirm("Cerrar sesión","Cierra CanalDeck en Telegram; no cierra Telegram oficial ni Nicegram. Tus carpetas locales siguen separadas por cuenta."){drafts.clear();ConnectionService.current?.clearAll();s.logout();home()}}}
         else button("Conectar mi cuenta",true){demo=false;connect()}

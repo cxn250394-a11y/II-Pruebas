@@ -27,6 +27,12 @@ class Organization(context: Context, accountId: Long) {
     }
     fun folder(chat: Long) = p.getString("chat-folder-$chat", "").orEmpty().takeIf { it in set("folders") }.orEmpty()
     fun assign(chat: Long, folder: String) { if (folder.isBlank() || folder in set("folders")) p.edit().putString("chat-folder-$chat", folder).apply() }
+    /** Explicit owner opt-in, isolated by Telegram account and numeric chat ID. Default OFF. */
+    fun pickWatchMode(chat: Long): PickWatchMode =
+        PickWatchMode.entries.getOrElse(p.getInt("picks-watch-$chat", 0)) { PickWatchMode.OFF }
+    fun pickWatchMode(chat: Long, mode: PickWatchMode) {
+        p.edit().putInt("picks-watch-$chat", mode.ordinal).apply()
+    }
     fun mode(chat: Long): NoticeMode = NoticeMode.entries.getOrElse(p.getInt("notice-$chat", 0)) { NoticeMode.OFF }
     fun mode(chat: Long, mode: NoticeMode) { p.edit().putInt("notice-$chat", mode.ordinal).apply() }
     fun words(chat: Long) = p.getString("words-$chat", "").orEmpty()

@@ -7,6 +7,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import dev.g000sha256.tdl.dto.Message
+import dev.g000sha256.tdl.dto.MessagePhoto
+import dev.g000sha256.tdl.dto.MessageDocument
+import dev.g000sha256.tdl.dto.ChatTypeSupergroup
 import java.util.Calendar
 
 /** Visible, opt-in connection. No FCM credentials, hidden receiver or restart after explicit stop. */
@@ -18,6 +21,7 @@ class ConnectionService : Service() {
     }
     private val manager by lazy { getSystemService(NotificationManager::class.java) }
     private val seen = NoticeBook()
+    private val watchedAlbums = NoticeBook()
     private val lines = linkedMapOf<Long, MutableList<String>>()
     private var session: TelegramSession? = null
     private val observer: () -> Unit = { updateConnection(); if (TelegramSession.current == null) stopSelf() }
@@ -48,6 +52,33 @@ class ConnectionService : Service() {
         val cal = Calendar.getInstance(); val now = cal.get(Calendar.HOUR_OF_DAY)*60+cal.get(Calendar.MINUTE)
         val raw = TelegramSession.preview(m.content)
         val quiet = org.quietEnabled && DeckRules.quiet(now,org.quietStart(),org.quietEnd())
+        val watch = org.pickWatchMode(m.chatId)
+        if (watch != PickWatchMode.OFF) {
+            // Owner-selected chat ID; matching a title alone never grants access.
+            val selected = s.chats[m.chatId] ?: return
+            if (selected.type !is ChatTypeSupergroup ||
+                (watch == PickWatchMode.DIRECT_CHANNEL && !(selected.type as ChatTypeSupergroup).isChannel)) return
+            if (quiet || s.visibleChat == m.chatId || m.isFromOffline) return
+            val body = TelegramSession.pickText(m.content)
+            val c = m.content
+            val hasImage = c is MessagePhoto ||
+                (c is MessageDocument && c.document.mimeType.startsWith("image/"))
+            val plan = PickWatchRules.propose(
+                watch, selected.title, body, hasImage, m.date.toLong(),
+                System.currentTimeMillis() / 1000, m.isOutgoing, m.editDate > 0
+            ) ?: return
+            if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+            if (!manager.areNotificationsEnabled() || m.id <= selected.lastReadInboxMessageId) return
+            if (!seen.accept(m.chatId, m.id)) return
+            if (m.mediaAlbumId != 0L && !watchedAlbums.accept(m.chatId, m.mediaAlbumId)) return
+            s.linkToOriginal(m) { link ->
+                if (session === s && s.ready && org.pickWatchMode(m.chatId) == watch) {
+                    postPickNotice(m, plan, link)
+                }
+            }
+            return // Curated watch never falls through to broad keyword/all-chat rules.
+        }
         if (!DeckRules.shouldNotify(org.mode(m.chatId),raw,org.words(m.chatId),m.isOutgoing,s.visibleChat==m.chatId,quiet)) return
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         if (!manager.areNotificationsEnabled() || !seen.accept(m.chatId,m.id)) return
@@ -71,6 +102,43 @@ class ConnectionService : Service() {
             .setSortKey((Long.MAX_VALUE-time).toString().padStart(19,'0')).setGroup("canaldeck-messages")
             .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN).setContentIntent(pending).setAutoCancel(true)
             .setVisibility(Notification.VISIBILITY_PRIVATE).build())
+        summary()
+    }
+    private fun postPickNotice(m: Message, plan: PickWatchNotice, link: String?) {
+        val s = session ?: return
+        val chat = s.chats[m.chatId] ?: return
+        val channelId = channel(m.chatId)
+        manager.createNotificationChannel(NotificationChannel(channelId, chat.title.take(80),
+            NotificationManager.IMPORTANCE_HIGH))
+        val source = plan.render(link)
+        val recent = lines.getOrPut(m.chatId) { mutableListOf() }
+        recent.add(source)
+        while (recent.size > 5) recent.removeAt(0)
+        while (lines.size > 30) {
+            val oldest = lines.keys.first()
+            lines.remove(oldest)
+            manager.cancel(oldest.toString(), 2000)
+        }
+        val open = Intent(this, CanalActivity::class.java)
+            .setData(Uri.parse("canaldeck://chat/${m.chatId}"))
+            .putExtra("chat", m.chatId)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val pending = PendingIntent.getActivity(this, 0, open,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        manager.notify(m.chatId.toString(), 2000,
+            Notification.Builder(this, channelId)
+                .setSmallIcon(mx.charly.ui.R.drawable.ic_suite)
+                .setContentTitle(plan.heading)
+                .setContentText("Hora original: ${plan.originalTime}")
+                .setStyle(Notification.BigTextStyle().bigText(source))
+                .setWhen(m.date.toLong() * 1000L)
+                .setShowWhen(true)
+                .setContentIntent(pending)
+                .setAutoCancel(true)
+                .setGroup("canaldeck-messages")
+                .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
+                .setVisibility(Notification.VISIBILITY_PRIVATE)
+                .build())
         summary()
     }
     private fun summary() {
