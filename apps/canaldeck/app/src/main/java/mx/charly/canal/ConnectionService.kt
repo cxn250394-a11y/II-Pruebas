@@ -41,10 +41,75 @@ class ConnectionService : Service() {
     }
     private fun updateConnection() { val s = session ?: return; manager.notify(1,connectionNotification(if(s.ready) s.network else s.status)) }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int { if(intent?.action=="stop") stopSelf(); return START_NOT_STICKY }
+    /**
+     * Private phone notification only. No Bot API, TDLib forwarding, media transfer,
+     * RS1000 calls or changes to the current Pick$ channel.
+     */
+    private fun pickNotice(s: TelegramSession, m: Message, org: Organization): Boolean {
+        val mode = org.pickMode(m.chatId)
+        if (mode == PickSourceMode.OFF || m.isOutgoing || m.sendingState != null ||
+            m.selfDestructType != null) return false
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            return false
+        if (!manager.areNotificationsEnabled()) return false
+        val chat = s.chats[m.chatId] ?: return false
+        val text = when (val c = m.content) {
+            is dev.g000sha256.tdl.dto.MessageText -> c.text.text
+            is dev.g000sha256.tdl.dto.MessagePhoto -> c.caption.text
+            is dev.g000sha256.tdl.dto.MessageDocument -> c.caption.text
+            else -> ""
+        }
+        val hasPhoto = m.content is dev.g000sha256.tdl.dto.MessagePhoto ||
+            (m.content is dev.g000sha256.tdl.dto.MessageDocument &&
+                (m.content as dev.g000sha256.tdl.dto.MessageDocument).document.mimeType in
+                setOf("image/jpeg", "image/png", "image/webp"))
+        val timestamp = m.date.toLong()
+        val age = System.currentTimeMillis() / 1000L - timestamp
+        if (age !in 0L..(4L * 3600L)) return false
+        val candidate = PickAlertPolicy.candidate(
+            mode, chat.title, text, hasPhoto, timestamp, outgoing = m.isOutgoing,
+            changed = m.editDate > 0
+        ) ?: return false
+        // Albums consist of multiple messages. This strictly consumes only the first
+        // qualifying message and does not combine captions across unrelated posts.
+        if (!org.acceptPick(m.chatId, m.id, timestamp, m.mediaAlbumId)) return false
+        val protected = chat.hasProtectedContent || m.selfDestructType != null
+        s.pickMessageLink(m.chatId, m.id, m.mediaAlbumId != 0L) { link ->
+            if (session !== s || !s.ready) return@pickMessageLink
+            val rendered = PickAlertPolicy.render(candidate, link)
+            val id = "canaldeck-picks"
+            manager.createNotificationChannel(NotificationChannel(
+                id, "Picks seleccionados · CanalDeck", NotificationManager.IMPORTANCE_DEFAULT
+            ))
+            val open = Intent(this, CanalActivity::class.java)
+                .setData(Uri.parse("canaldeck://chat/" + m.chatId))
+                .putExtra("chat", m.chatId)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            val pending = PendingIntent.getActivity(this, 0, open,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            // For protected sources the notice contains NO text/caption/image from
+            // Telegram. The same is true for unprotected sources: only metadata.
+            val body = if (protected) rendered else rendered
+            manager.notify("picks-" + m.chatId, 3000,
+                Notification.Builder(this, id)
+                    .setSmallIcon(mx.charly.ui.R.drawable.ic_suite)
+                    .setContentTitle("Pick externo · sin verificar")
+                    .setContentText(candidate.heading)
+                    .setStyle(Notification.BigTextStyle().bigText(body))
+                    .setContentIntent(pending)
+                    .setAutoCancel(true)
+                    .setVisibility(Notification.VISIBILITY_PRIVATE)
+                    .build())
+        }
+        return true
+    }
+
     private fun notice(m: Message) {
         val s = session ?: return
         if (!s.ready || s.accountId == 0L || m.sendingState != null) return
         val org = Organization(this,s.accountId)
+        if (pickNotice(s, m, org)) return
         val cal = Calendar.getInstance(); val now = cal.get(Calendar.HOUR_OF_DAY)*60+cal.get(Calendar.MINUTE)
         val raw = TelegramSession.preview(m.content)
         val quiet = org.quietEnabled && DeckRules.quiet(now,org.quietStart(),org.quietEnd())
