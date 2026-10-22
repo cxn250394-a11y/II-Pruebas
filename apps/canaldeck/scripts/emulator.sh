@@ -41,6 +41,21 @@ assert e['expected_photos']==e['final_photo_set_size']==2
 assert e['reopened_phase']=='COMPLETE' and e['new_requests_after_reopen']==0
 print('PASS asynchronous Fake + SQLite; exact two-photo finals; reopen without dispatch; sent_real_messages=0')
 PY_ASYNC_EVIDENCE
+adb exec-out run-as mx.charly.canal.offline cat files/canaldeck-single-evidence.json > canal-device/single-evidence.json
+python3 - <<'PY_SINGLE_EVIDENCE'
+import json
+with open('canal-device/single-evidence.json') as f:
+    e=json.load(f)
+assert e['compiled_real_output_enabled'] is False
+assert e['offline_rehearsal_only'] is True and e['sent_real_messages']==0
+assert e['queued_was_final'] is False and e['quick_ack_was_final'] is False
+assert e['source_original_count']==1 and e['exact_source_original'] is True
+assert e['final_original_mapping_count']==1
+assert e['fake_headers']==1 and e['fake_original_requests']==1
+assert e['reopened_phase']=='COMPLETE'
+assert e['new_requests_after_reopen']==0 and e['duplicate_requests']==0
+print('PASS single integration Fake + SQLite; one original mapped to final ACK; reopened without replay; sent_real_messages=0')
+PY_SINGLE_EVIDENCE
 grep -q 'OK (' canal-device/instrumentation.txt
 ! grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|Process crashed' canal-device/instrumentation.txt
 adb exec-out run-as mx.charly.canal.offline cat files/canaldeck-demo.png > canal-device/demo.png

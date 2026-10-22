@@ -48,7 +48,9 @@ class RelayPreferences(context: Context, val accountId: Long) {
     fun selectDestination(chatId: Long): Boolean = synchronized(lock) {
         if (!healthy || chatId == 0L || sourceRole(chatId) != PickWatchMode.OFF) return@synchronized false
         // Changing a route always turns the user's output switch OFF.
-        commit(p.edit().putLong("destination", chatId).putBoolean("enabled", false))
+        val edit = p.edit().putLong("destination", chatId).putBoolean("enabled", false)
+        clearSinglePhotoConsents(edit)
+        commit(edit)
     }
 
     fun sources(): Map<Long, PickWatchMode> = synchronized(lock) {
@@ -104,6 +106,7 @@ class RelayPreferences(context: Context, val accountId: Long) {
             (role != PickWatchMode.OFF && chatId == destinationChatId())) return false
         val ids = p.getStringSet("sources", emptySet()).orEmpty().toMutableSet()
         val edit = p.edit().putInt("source-role-$chatId", role.ordinal).putBoolean("enabled", false)
+            .putBoolean("single-photo-only-$chatId", false)
         if (role == PickWatchMode.OFF) {
             ids.remove(chatId.toString())
             // Deliberately keep the source's baseline and date when disabling it.
@@ -133,9 +136,34 @@ class RelayPreferences(context: Context, val accountId: Long) {
 
     fun changeEnabled(value: Boolean): Boolean = synchronized(lock) {
         if (!healthy || (value && (destinationChatId() == 0L || sources().isEmpty()))) return@synchronized false
-        commit(p.edit().putBoolean("enabled", value))
+        val edit = p.edit().putBoolean("enabled", value)
+        if (!value) clearSinglePhotoConsents(edit)
+        commit(edit)
     }
 
-    /** Rollback: close output without deleting identities, delivery states or checkpoints. */
-    fun stop(): Boolean = synchronized(lock) { commit(p.edit().putBoolean("enabled", false)) }
+    /** An image without text has UNKNOWN semantics; this choice never verifies a tipster. */
+    fun singlePhotoOnlyConsent(chatId: Long): Boolean = synchronized(lock) {
+        healthy && sourcePolicy(chatId) == RelaySourcePolicy.FANO_DIRECT &&
+            p.getBoolean("single-photo-only-$chatId", false)
+    }
+
+    /** Future owner control only. No UI or remote setting enables this in the offline build. */
+    fun setSinglePhotoOnlyConsent(chatId: Long, allow: Boolean): Boolean = synchronized(lock) {
+        if (!healthy || sourcePolicy(chatId) != RelaySourcePolicy.FANO_DIRECT ||
+            destinationChatId() == 0L) return@synchronized false
+        commit(p.edit().putBoolean("single-photo-only-$chatId", allow).putBoolean("enabled", false))
+    }
+
+    private fun clearSinglePhotoConsents(edit: SharedPreferences.Editor) {
+        p.getStringSet("sources", emptySet()).orEmpty().forEach { raw ->
+            raw.toLongOrNull()?.let { edit.putBoolean("single-photo-only-$it", false) }
+        }
+    }
+
+    /** Rollback closes output and photo-only consent; identities and checkpoints survive. */
+    fun stop(): Boolean = synchronized(lock) {
+        val edit = p.edit().putBoolean("enabled", false)
+        clearSinglePhotoConsents(edit)
+        commit(edit)
+    }
 }

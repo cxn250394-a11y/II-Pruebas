@@ -1,6 +1,19 @@
-# CanalDeck 0.4.1 — carril aislado de ensayo offline
+# CanalDeck 0.4.2 — candidato de integración individual offline
 
-Este hijo de PR #8 conserva congelado el HEAD `3b32cb7`; tampoco cambia Info PR #33
+Este nuevo hijo de PR #9 añade un controlador asíncrono para referencias y fotos
+individuales, con puerto preparado sobre el cliente TDLib existente. Usa su mismo
+flujo de updates; no crea otro lector. La salida real sigue compilada OFF, sin
+Internet ni posibilidad de iniciar sesión en el APK de laboratorio.
+
+PR #8 `3b32cb7`, PR #9 `6a40b20` e Info PR #33 `e4a99e3` permanecen congelados.
+[Contrato y límites de la integración](docs/SINGLE_RELAY_EVIDENCIA_Y_LIMITES.md) y
+[procedimiento futuro de activación y reversa](docs/SINGLE_RELAY_ACTIVACION_Y_REVERSA.md).
+La integración nueva se prueba automáticamente con Fake; la pantalla de ensayo
+heredada sigue ejercitando el protocolo de #9. **ACK real no verificado; álbum
+vivo HOLD; foto sin texto no acredita un pick ni un tipster.**
+
+El laboratorio heredado de PR #9 fue hijo de PR #8, con HEAD `3b32cb7` congelado;
+tampoco cambió Info PR #33
 `e4a99e3`. El APK de este carril usa **`mx.charly.canal.offline`**, carece de permiso
 de Internet, bloquea la construcción de una sesión y conserva el fusible de salida
 real en `false`. Su inicio solo ofrece ejemplos y el ensayo ficticio. No se instala
