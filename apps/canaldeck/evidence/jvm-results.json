@@ -2,7 +2,7 @@
   "schema_version": 1,
   "runtime": "Gradle Android JVM/Robolectric",
   "totals": {
-    "tests": 264,
+    "tests": 322,
     "failures": 0,
     "errors": 0,
     "skipped": 0
@@ -53,6 +53,27 @@
     {
       "name": "mx.charly.canal.DialogPrivacyTest",
       "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "mx.charly.canal.ExistingClientRelayAckRouterTest",
+      "tests": "9",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "mx.charly.canal.ExistingClientRelayAdmissionTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "mx.charly.canal.ExistingClientRelayPortTest",
+      "tests": "4",
       "failures": "0",
       "errors": "0",
       "skipped": "0"
@@ -137,6 +158,27 @@
     {
       "name": "mx.charly.canal.RelaySettingsSelectionTest",
       "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "mx.charly.canal.SinglePhotoConsentTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "mx.charly.canal.SingleRelayControllerTest",
+      "tests": "20",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "mx.charly.canal.SingleRelayIntegrationRegressionTest",
+      "tests": "15",
       "failures": "0",
       "errors": "0",
       "skipped": "0"

@@ -22,6 +22,7 @@ gate = (code / "RelayRealGate.kt").read_text()
 assert "BuildConfig.PICK_RELAY_REAL_ENABLED && userEnabled" in gate
 production = list(code.glob("*.kt"))
 assert sum(p.read_text().count("TdlClient.create()") for p in production) == 1, "Use the existing single client"
+assert sum(p.read_text().count("allUpdates.collect") for p in production) == 1, "Use the existing single update stream"
 coordinator = (code / "RelayCoordinator.kt").read_text()
 # The live pipeline can prepare, but must have no outgoing SDK/activation call site.
 for forbidden in ["client.sendMessage(", "client.forwardMessages(", ".deliverAfterSeparateActivation(", ".deliverSynthetic("]:
@@ -31,12 +32,20 @@ assert sum(p.read_text().count(".deliverAfterSeparateActivation(") for p in prod
 fake = (code / "FakeRelayTdlib.kt").read_text()
 assert "import dev.g000sha256" not in fake and "TdlClient.create" not in fake
 adapter = (code / "TdlRelayAdapter.kt").read_text()
-assert "requireCurrentConsent(config)" in adapter
-assert "sendCopy = false" in adapter and "removeCaption = false" in adapter
-assert "paidMessageStarCount = 0" in adapter and "allowPaidBroadcast = false" in adapter
+assert "deliverAfterSeparateActivation" not in adapter, "Retire the obsolete synchronous delivery path"
+assert "client.sendMessage(" not in adapter and "client.forwardMessages(" not in adapter
 assert "downloadFile(" not in adapter and "InputMessagePhoto(" not in adapter
+single = (code / 'TdlSingleRelayCalls.kt').read_text()
+assert 'TdlClient.create' not in single and 'allUpdates' not in single
+assert 'RelayRealGate.requireOpen(config.userEnabled)' in single and 'RelayRealGate.requireOpen(true)' in single
+assert 'sendCopy = false' in single and 'removeCaption = false' in single
+assert 'paidMessageStarCount = 0' in single and 'allowPaidBroadcast = false' in single
+assert 'downloadFile(' not in single and 'InputMessagePhoto(' not in single
+for name in ['SingleRelayController.kt', 'SingleRelayModels.kt', 'SingleRelayPlanning.kt']:
+    pure = (code / name).read_text()
+    assert 'dev.g000sha256' not in pure and 'TdlClient' not in pure and 'TelegramSession' not in pure, name
 database = (code / "RelayDatabase.kt").read_text()
 for ddl in re.findall(r'CREATE TABLE [^"]+', database):
     assert not re.search(r'\b(body|caption|permalink|photo|message_text|media_bytes)\b', ddl), ddl
 assert "metric != RelayMetric.REAL_CONFIRMED" in database
-print("PASS: compiled OFF; one existing client; live preparation has no output call site; Fake has no SDK; no protected-media copy; private metadata-only ledger")
+print("PASS: compiled OFF; one existing client and update stream; legacy preparation only; guarded native singleton seam; Fake has no SDK; no protected-media copy; metadata-only ledger")

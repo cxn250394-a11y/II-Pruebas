@@ -3,18 +3,16 @@ package mx.charly.canal
 import dev.g000sha256.tdl.TdlClient
 import dev.g000sha256.tdl.TdlResult
 import dev.g000sha256.tdl.dto.*
-import kotlinx.coroutines.CancellationException
 
 /**
- * Read-only snapshots and dormant official operations on CanalDeck's existing client.
+ * Read-only snapshots on CanalDeck's existing client.
  * No second client, downloads, OCR, copied media, retry worker or stored message body.
- * Production code only calls snapshot; the delivery method is compiled closed in v0.4.
+ * Output operations live only in the guarded asynchronous singleton port.
  */
 internal class TdlRelayAdapter(
     private val client: TdlClient,
     private val currentAccount: () -> Long,
-    private val isReady: () -> Boolean,
-    private val persistedConfigStillMatches: (RelayConfig) -> Boolean
+    private val isReady: () -> Boolean
 ) {
     private fun sameSession(account: Long) = account > 0L && isReady() && currentAccount() == account
 
@@ -61,6 +59,17 @@ internal class TdlRelayAdapter(
             config.sources.count { it.accountId == config.accountId && it.chatId == source && it.enabled } != 1)
             return null
         return snapshotIds(source, messages.map { it.id }, albumComplete, config)
+    }
+
+    /** Singleton integration snapshot. Observed metadata is not a provider completeness proof. */
+    internal suspend fun snapshotSingle(
+        observed: SingleRelayObserved, config: RelayConfig
+    ): Pair<RelayBatch, RelayPermissions>? {
+        RelayRealGate.requireOpen(config.userEnabled)
+        if (observed.albumId != 0L || !observed.incoming || observed.edited ||
+            observed.accountId != config.accountId || observed.messageId <= 0L || observed.sourceChatId == 0L)
+            return null
+        return snapshotIds(observed.sourceChatId, listOf(observed.messageId), false, config)
     }
 
     private suspend fun snapshotIds(
@@ -129,75 +138,4 @@ internal class TdlRelayAdapter(
             sourceAllowed, destinationAllowed, source.hasProtectedContent, forwardable, protected)
     }
 
-    private fun requireCurrentConsent(config: RelayConfig) {
-        RelayRealGate.requireOpen(config.userEnabled) // First gate, before any provider I/O.
-        check(sameSession(config.accountId) && persistedConfigStillMatches(config)) { "RELAY_CONSENT_CHANGED" }
-    }
-
-    private fun options() = MessageSendOptions(suggestedPostInfo = null,
-        disableNotification = true, fromBackground = true, protectContent = false,
-        allowPaidBroadcast = false, paidMessageStarCount = 0, updateOrderOfInstalledStickerSets = false,
-        schedulingState = null, effectId = 0, sendingId = 0, onlyPreview = false)
-
-    /**
-     * Dormant activation seam, NOT called by the app or Fake transport in this release.
-     * A new reviewed activation must wire asynchronous ACKs; a queued send is UNKNOWN,
-     * and cannot automatically advance to forwarding or be retried.
-     */
-    suspend fun deliverAfterSeparateActivation(
-        batch: RelayBatch, config: RelayConfig, ledger: RelayLedger
-    ): RelayAck {
-        requireCurrentConsent(config)
-        if (batch.synthetic || !batch.liveUpdate || batch.messages.isEmpty()) return RelayAck.REJECTED
-        val first = batch.messages.first()
-        val ids = batch.messages.map { it.messageId }
-        val initial = snapshotIds(first.sourceChatId, ids, batch.completeAlbum, config) ?: return RelayAck.REJECTED
-        val plan = PickRelayPlanner.plan(initial.first, config, initial.second, System.currentTimeMillis() / 1000L)
-        if (plan.action !in setOf(RelayAction.REFERENCE_ONLY, RelayAction.FORWARD_ALLOWED_MEDIA)) return RelayAck.REJECTED
-        val key = plan.key ?: return RelayAck.REJECTED
-        val destination = config.destinationChatId ?: return RelayAck.REJECTED
-        if (!ledger.acceptObserved(key, ids, initial.first.messages.minOf { it.originalUnix }) || !ledger.claim(key))
-            return RelayAck.REJECTED
-        try {
-            requireCurrentConsent(config)
-            val refreshed = snapshotIds(first.sourceChatId, ids, batch.completeAlbum, config)
-                ?: return unknown(ledger, key)
-            val beforeHeader = PickRelayPlanner.plan(refreshed.first, config, refreshed.second, System.currentTimeMillis() / 1000L)
-            if (beforeHeader != plan) return unknown(ledger, key)
-            val header = plan.header ?: return unknown(ledger, key)
-            val sent = client.sendMessage(chatId = destination, topicId = null, replyTo = null,
-                options = options(), inputMessageContent = InputMessageText(
-                    text = FormattedText(text = header, entities = emptyArray()),
-                    // References must not implicitly copy a protected post through a URL preview.
-                    linkPreviewOptions = LinkPreviewOptions(isDisabled = true, url = "",
-                        forceSmallMedia = false, forceLargeMedia = false, showAboveText = false), clearDraft = false))
-            if (sent !is TdlResult.Success || sent.result.chatId != destination || sent.result.sendingState != null)
-                return unknown(ledger, key)
-            if (plan.action == RelayAction.FORWARD_ALLOWED_MEDIA) {
-                requireCurrentConsent(config)
-                val latest = snapshotIds(first.sourceChatId, ids, batch.completeAlbum, config)
-                    ?: return unknown(ledger, key)
-                val beforeMedia = PickRelayPlanner.plan(latest.first, config, latest.second, System.currentTimeMillis() / 1000L)
-                if (beforeMedia != plan) return unknown(ledger, key)
-                val forwarded = client.forwardMessages(chatId = destination, topicId = null,
-                    fromChatId = first.sourceChatId, messageIds = plan.messageIds.toLongArray(),
-                    options = options(), sendCopy = false, removeCaption = false)
-                if (forwarded !is TdlResult.Success || forwarded.result.messages.size != plan.messageIds.size ||
-                    forwarded.result.messages.any { it == null || it.chatId != destination || it.sendingState != null })
-                    return unknown(ledger, key)
-            }
-            ledger.finish(key, RelayDeliveryState.CONFIRMED)
-            return RelayAck.CONFIRMED
-        } catch (cancelled: CancellationException) {
-            ledger.finish(key, RelayDeliveryState.UNKNOWN)
-            throw cancelled
-        } catch (_: Exception) {
-            return unknown(ledger, key)
-        }
-    }
-
-    private fun unknown(ledger: RelayLedger, key: RelayKey): RelayAck {
-        ledger.finish(key, RelayDeliveryState.UNKNOWN)
-        return RelayAck.UNKNOWN
-    }
 }
