@@ -91,8 +91,8 @@ class ConnectionService : Service() {
             chat?.title?.take(80) ?: "Conversación " + m.chatId, NotificationManager.IMPORTANCE_HIGH))
         val title = pickTitle ?: chat?.title ?: "Nueva publicación"
         val privateContent = chat?.hasProtectedContent == true || m.selfDestructType != null
-        val preview = if (org.previews && !privateContent) raw.take(400)
-                      else if (pickTitle != null) "Nueva referencia · abrir CanalDeck"
+        val preview = if (pickTitle != null) raw.take(400)
+                      else if (org.previews && !privateContent) raw.take(220)
                       else "Mensaje nuevo · abrir CanalDeck"
         val recent = lines.getOrPut(m.chatId) { mutableListOf() }
         recent.add(preview)
