@@ -76,7 +76,9 @@ class PickBridgeRulesTest {
         val good = listOf("https://t.me/fanofutbol/100", "https://t.me/c/123/456?single", "https://telegram.me/c/123/456")
         good.forEach { assertEquals(it, PickBridgeRules.validTelegramLink(it)) }
         val bad = listOf("https://t.me.evil.test/x", "http://t.me/x",
-            "https://t.me@evil.test/x", "javascript:alert(1)", "https://t.me/", "https://t.me/x\nX-Injected: y")
+            "https://t.me@evil.test/x", "javascript:alert(1)", "https://t.me/", "https://t.me/x\nX-Injected: y",
+            "https://t.me/+InvitationCode", "https://t.me/share/url?url=example.com",
+            "https://t.me/fanofutbol", "https://t.me/c/123/not-a-message", "https://t.me/c/123/456#fragment")
         bad.forEach { assertNull(PickBridgeRules.validTelegramLink(it)) }
     }
 
