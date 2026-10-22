@@ -232,6 +232,26 @@ class TelegramSession private constructor(private val context: Context) {
             }
         }
     }
+    /** TDLib official, offline message link. No URL is fabricated from the chat ID. */
+    fun pickMessageLink(chatId: Long, messageId: Long, album: Boolean, callback: (String?) -> Unit) {
+        if (!ready || closing) { callback(null); return }
+        scope.launch {
+            try {
+                val properties = client.getMessageProperties(chatId = chatId, messageId = messageId)
+                if (properties !is TdlResult.Success || !properties.result.canGetLink) {
+                    callback(null); return@launch
+                }
+                val result = client.getMessageLink(
+                    chatId = chatId, messageId = messageId, mediaTimestamp = 0,
+                    forAlbum = album, inMessageThread = false
+                )
+                callback(if (result is TdlResult.Success)
+                    PickAlertPolicy.canonicalMessageLink(result.result.link) else null)
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { callback(null) }
+        }
+    }
+
     fun logout() { if (!closing) scope.launch { val r = client.logOut(); if (r is TdlResult.Failure) failure(r) } }
     fun stop() {
         if (closing) return
