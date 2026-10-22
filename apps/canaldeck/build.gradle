@@ -13,22 +13,37 @@ subprojects { p ->
         defaultConfig {
             minSdk 28
             if (p.name == 'app') {
-                // Isolated owner rehearsal: cannot replace the installed main app or its data.
-                applicationId 'mx.charly.canal.offline'
+                // Keep the principal app's original identity. Only the offline flavor adds a suffix.
+                applicationId 'mx.charly.canal'
                 // Literal compiled fuse: no Gradle property, remote config or UI can open it.
                 buildConfigField 'boolean', 'PICK_RELAY_REAL_ENABLED', 'false'
-                buildConfigField 'boolean', 'OFFLINE_REHEARSAL_ONLY', 'true'
                 targetSdk 35
-                versionCode 5
-                versionName '0.4.2-integration-offline-beta'
+                versionCode 6
+                versionName '0.4.3-variants-beta'
                 ndk { abiFilters 'arm64-v8a', 'x86_64' }
                 testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+            }
+        }
+        if (p.name == 'app') {
+            flavorDimensions += 'mode'
+            productFlavors {
+                normal {
+                    dimension 'mode'
+                    buildConfigField 'boolean', 'OFFLINE_REHEARSAL_ONLY', 'false'
+                    resValue 'string', 'app_name', 'CanalDeck'
+                }
+                offline {
+                    dimension 'mode'
+                    applicationIdSuffix '.offline'
+                    buildConfigField 'boolean', 'OFFLINE_REHEARSAL_ONLY', 'true'
+                    resValue 'string', 'app_name', 'CanalDeck Offline'
+                }
             }
         }
         compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
         kotlinOptions { jvmTarget = '17' }
         testOptions { unitTests.includeAndroidResources = true }
-        buildFeatures { buildConfig true }
+        buildFeatures { buildConfig true; resValues true }
         packaging { resources { excludes += ['META-INF/LICENSE*', 'META-INF/NOTICE*', 'META-INF/AL2.0', 'META-INF/LGPL2.1'] } }
     }
     dependencies {

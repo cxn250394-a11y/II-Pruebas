@@ -24,6 +24,7 @@ import java.io.File
 import java.util.UUID
 
 @RunWith(RobolectricTestRunner::class) @Config(sdk = [28])
+/** Lab UI is excluded from the normal manifest, so its tests are flavor-specific. */
 class AsyncOfflineDemoTest {
     private class FixtureContext(base: Context) : ContextWrapper(base) {
         private val prefix = "offline-demo-test-${UUID.randomUUID()}-"

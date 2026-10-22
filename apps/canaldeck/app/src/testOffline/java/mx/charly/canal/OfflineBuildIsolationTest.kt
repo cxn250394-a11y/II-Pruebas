@@ -11,6 +11,7 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
+/** These constructor-denial assertions belong only to the offline product flavor. */
 class OfflineBuildIsolationTest {
     @Test fun candidateHasSeparateDataAndNoInternetPermission() {
         val app = RuntimeEnvironment.getApplication()

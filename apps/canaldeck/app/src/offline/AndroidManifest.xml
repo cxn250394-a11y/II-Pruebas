@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Enforce offline isolation even if a future dependency declares Internet. -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+</manifest>

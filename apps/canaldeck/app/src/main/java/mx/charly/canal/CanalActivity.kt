@@ -133,7 +133,7 @@ class CanalActivity : Screen() {
         statusLabel=label(TelegramSession.current?.let{if(it.ready)"${it.accountName} · ${it.network}" else it.status} ?: "Sin sesión iniciada",15f,accent)
         button(if(TelegramSession.current?.ready==true)"Abrir mis conversaciones" else "Empezar · conectar mi cuenta",true){demo=false;if(TelegramSession.current?.ready==true)chats()else connect()}
         button("Ver diseño con ejemplos — sin iniciar sesión"){demo=true;kind="all";query="";folder="*";chats()}
-        button("Ensayo offline · sin cuenta"){startActivity(Intent(this,AsyncOfflineDemoActivity::class.java))}
+        if (BuildConfig.OFFLINE_REHEARSAL_ONLY) button("Ensayo offline · sin cuenta"){startActivity(Intent(this,AsyncOfflineDemoActivity::class.java))}
         button("Ayuda para activar mi cuenta"){guide()}
         button("Identidad de aplicación / configuración"){demo=false;credentials()}
         label("Primera vez: crea tu identidad gratuita de aplicación en Telegram y pégala solo aquí. Después introduces tu teléfono, código y, si aplica, contraseña. No necesitas enviarlos a este chat.",13f,soft)

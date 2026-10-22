@@ -1,19 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
 mkdir -p canal-device
-# The produced APK filename changes across beta versions: install exactly one signed
-# artifact and verify it against the checksum produced by the build job.
-shopt -s nullglob
-apk_files=(canal-apk/CanalDeck-v*-beta.apk)
-if [[ ${#apk_files[@]} -ne 1 ]]; then
-  echo "Expected exactly one CanalDeck beta APK; found ${#apk_files[@]}" >&2
-  exit 1
-fi
-( cd canal-apk && sha256sum --check SHA256SUMS.txt )
-adb install -r "${apk_files[0]}"
-adb install -r canal-apk/tests.apk
+# Both debug packages stay on this runner. Only the offline APK is published.
+test "$(git rev-parse HEAD)" = "$(cat canal-offline-apk/SOURCE-COMMIT.txt)"
+echo "DEVICE_SOURCE_HEAD=$(git rev-parse HEAD)"
+( cd canal-offline-apk && sha256sum --check SHA256SUMS.txt )
+cmp canal-offline-apk/CanalDeck-v0.4.3-offline-beta.apk apps/canaldeck/app/build/outputs/apk/offline/debug/app-offline-debug.apk
+for flavor in normal offline; do
+  apk="apps/canaldeck/app/build/outputs/apk/$flavor/debug/app-$flavor-debug.apk"
+  sha256sum "$apk"
+  adb install -r "$apk"
+  adb install -r "apps/canaldeck/app/build/outputs/apk/androidTest/$flavor/debug/app-$flavor-debug-androidTest.apk"
+done
 adb logcat -c
-adb shell am instrument -w mx.charly.canal.offline.test/androidx.test.runner.AndroidJUnitRunner | tee canal-device/instrumentation.txt
+# Only home/identity/sandbox tests run in normal: never start a TDLib session.
+adb shell am instrument -w -e class mx.charly.canal.VariantIsolationDeviceTest mx.charly.canal.test/androidx.test.runner.AndroidJUnitRunner | tee canal-device/normal-instrumentation.txt
+grep -q 'OK (3 tests)' canal-device/normal-instrumentation.txt
+! grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|Process crashed' canal-device/normal-instrumentation.txt
+adb exec-out run-as mx.charly.canal cat files/variant-isolation-evidence.json > canal-device/normal-variant-isolation.json
+adb shell am instrument -w mx.charly.canal.offline.test/androidx.test.runner.AndroidJUnitRunner | tee canal-device/offline-instrumentation.txt
+grep -q 'OK (28 tests)' canal-device/offline-instrumentation.txt
+! grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|Process crashed' canal-device/offline-instrumentation.txt
+adb exec-out run-as mx.charly.canal.offline cat files/variant-isolation-evidence.json > canal-device/offline-variant-isolation.json
+python3 - <<'PY_VARIANT_EVIDENCE'
+import json
+for flavor in ('normal', 'offline'):
+    with open(f'canal-device/{flavor}-variant-isolation.json') as f:
+        e=json.load(f)
+    offline=flavor=='offline'
+    assert e['application_id']=='mx.charly.canal'+('.offline' if offline else '')
+    assert e['sibling_application_id']=='mx.charly.canal'+('' if offline else '.offline')
+    assert e['offline_rehearsal_only'] is offline
+    assert e['internet_permission'] is (not offline)
+    assert e['compiled_real_output_enabled'] is False
+    assert e['different_uid'] is True and e['different_data_dir'] is True
+    assert e['sibling_private_dir_readable'] is False
+    for field in ('own_preferences_round_trip','own_sqlite_round_trip','own_file_round_trip','own_vault_round_trip'):
+        assert e[field] is True
+    assert e['account_connected'] is False and e['sent_real_messages']==0
+    print(f'VARIANT_DEVICE_{flavor.upper()}='+json.dumps(e,sort_keys=True))
+PY_VARIANT_EVIDENCE
 adb exec-out run-as mx.charly.canal.offline cat files/canaldeck-relay-evidence.json > canal-device/relay-evidence.json
 python3 - <<'PY_RELAY_EVIDENCE'
 import json
@@ -56,8 +82,6 @@ assert e['reopened_phase']=='COMPLETE'
 assert e['new_requests_after_reopen']==0 and e['duplicate_requests']==0
 print('PASS single integration Fake + SQLite; one original mapped to final ACK; reopened without replay; sent_real_messages=0')
 PY_SINGLE_EVIDENCE
-grep -q 'OK (' canal-device/instrumentation.txt
-! grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|Process crashed' canal-device/instrumentation.txt
 adb exec-out run-as mx.charly.canal.offline cat files/canaldeck-demo.png > canal-device/demo.png
 adb shell am start -W -n mx.charly.canal.offline/mx.charly.canal.CanalActivity | tee canal-device/launch.txt
 sleep 2

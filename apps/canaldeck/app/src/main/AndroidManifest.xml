@@ -1,1 +1,23 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.POST_NOTIFICATIONS"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING"/><application android:label="CanalDeck Offline" android:theme="@style/SuiteTheme" android:icon="@drawable/ic_suite" android:allowBackup="false" android:usesCleartextTraffic="false" android:fullBackupContent="@xml/no_backup" android:dataExtractionRules="@xml/extraction"><activity android:name=".CanalActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity><activity android:name=".RelaySettingsActivity" android:exported="false"/><activity android:name=".AsyncOfflineDemoActivity" android:exported="false"/><service android:name=".ConnectionService" android:exported="false" android:foregroundServiceType="remoteMessaging"/></application></manifest>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <application
+        android:label="@string/app_name"
+        android:theme="@style/SuiteTheme"
+        android:icon="@drawable/ic_suite"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false"
+        android:fullBackupContent="@xml/no_backup"
+        android:dataExtractionRules="@xml/extraction">
+        <activity android:name=".CanalActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".RelaySettingsActivity" android:exported="false" />
+        <activity android:name=".AsyncOfflineDemoActivity" android:exported="false" />
+        <service android:name=".ConnectionService" android:exported="false" android:foregroundServiceType="remoteMessaging" />
+    </application>
+</manifest>

@@ -14,6 +14,7 @@ import org.junit.runner.RunWith
 
 /** Actual Android UI + SQLite; synthetic demo only, no client, login, media or network. */
 @RunWith(AndroidJUnit4::class)
+/** The interactive Fake rehearsal is present only in the offline product flavor. */
 class AsyncOfflineDemoDeviceTest {
     private fun views(view: View): List<View> = listOf(view) + if (view is ViewGroup)
         (0 until view.childCount).flatMap { views(view.getChildAt(it)) } else emptyList()
