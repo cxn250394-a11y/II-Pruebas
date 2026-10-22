@@ -24,6 +24,14 @@ class TelegramSession private constructor(private val context: Context) {
             null -> ""
             else -> "Contenido no representado por esta versión"
         }
+        /** Only visible caption/text: never OCR or download protected images to infer authorship. */
+        fun pickText(c: MessageContent?): String = when (c) {
+            is MessageText -> c.text.text
+            is MessagePhoto -> c.caption.text
+            is MessageVideo -> c.caption.text
+            is MessageDocument -> c.caption.text
+            else -> ""
+        }
         fun errorText(code: Int, raw: String): String = when {
             raw.contains("PHONE_NUMBER_INVALID") -> "Revisa el teléfono con código de país, por ejemplo +52…"
             raw.contains("PHONE_CODE_INVALID") || raw.contains("EMAIL_CODE_INVALID") -> "El código no es correcto. Revisa el último código recibido."
@@ -178,6 +186,30 @@ class TelegramSession private constructor(private val context: Context) {
                 for (chat in ids) { val r = client.getChat(chat); if (r is TdlResult.Success) chats[chat] = r.result }
                 notifyUi()
             }
+        }
+    }
+    /** Obtain the original URL through TDLib; never manufacture a t.me/c link from 64-bit IDs. */
+    fun linkToOriginal(message: Message, callback: (String?) -> Unit) {
+        if (!ready || closing || message.sendingState != null ||
+            chats[message.chatId]?.type !is ChatTypeSupergroup) {
+            callback(null)
+            return
+        }
+        scope.launch {
+            var link: String? = null
+            try {
+                val p = client.getMessageProperties(chatId = message.chatId, messageId = message.id)
+                if (p is TdlResult.Success && p.result.canGetLink) {
+                    val r = client.getMessageLink(
+                        chatId = message.chatId, messageId = message.id,
+                        mediaTimestamp = 0, checklistTaskId = 0, pollOptionId = "",
+                        forAlbum = false, inMessageThread = false
+                    )
+                    if (r is TdlResult.Success) link = PickWatchRules.checkedLink(r.result.link)
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { /* Unknown source URL -> No disponible, not a fabricated link. */ }
+            if (!closing && ready) callback(link)
         }
     }
     fun history(id: Long, before: Long = 0, callback: (List<Message>?, String?) -> Unit) {
