@@ -226,6 +226,7 @@ class TelegramSession private constructor(private val context: Context) {
         scope.launch {
             val response = client.getMessageLink(
                 chatId = m.chatId, messageId = m.id, mediaTimestamp = 0,
+                checklistTaskId = 0, pollOptionId = "",
                 forAlbum = false, inMessageThread = false
             )
             val link = if (response is TdlResult.Success) response.result.link else null
