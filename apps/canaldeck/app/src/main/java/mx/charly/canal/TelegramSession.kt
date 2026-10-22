@@ -54,6 +54,9 @@ class TelegramSession private constructor(private val context: Context) {
     val observers = CopyOnWriteArrayList<() -> Unit>()
     val messageObservers = CopyOnWriteArrayList<(Long) -> Unit>()
     val chats = linkedMapOf<Long, Chat>()
+    private val localInboxReads = LocalInboxReadFence()
+    fun localInboxReadId(chatId: Long): Long =
+        localInboxReads.boundary(accountId, chatId, chats[chatId]?.lastReadInboxMessageId ?: 0L)
     val recent = linkedMapOf<Pair<Long, Long>, Message>()
     val removed = linkedSetOf<Pair<Long, Long>>()
     var state: AuthorizationState? = null; private set
@@ -91,11 +94,29 @@ class TelegramSession private constructor(private val context: Context) {
                     }
                     is UpdateChatLastMessage -> refreshChat(u.chatId)
                     is UpdateChatTitle -> refreshChat(u.chatId)
-                    is UpdateChatReadInbox -> { refreshChat(u.chatId); if (u.unreadCount == 0) onRead?.invoke(u.chatId) }
+                    is UpdateChatReadInbox -> {
+                        // A pending message-link callback must see this read boundary
+                        // before getChat completes and replaces the cached Chat object.
+                        localInboxReads.observe(accountId, u.chatId, u.lastReadInboxMessageId)
+                        refreshChat(u.chatId)
+                        if (u.unreadCount == 0) onRead?.invoke(u.chatId)
+                    }
                     is UpdateChatReadOutbox -> refreshChat(u.chatId)
-                    is UpdateMessageContent -> scope.launch {
-                        val r = client.getMessage(chatId = u.chatId, messageId = u.messageId)
-                        if (r is TdlResult.Success) record(r.result)
+                    is UpdateMessageContent -> {
+                        // Invalidate pending local-notice snapshots immediately, not after
+                        // the asynchronous refresh: a link RPC may finish first.
+                        recent.remove(u.chatId to u.messageId); notifyMessages(u.chatId)
+                        scope.launch {
+                            val r = client.getMessage(chatId = u.chatId, messageId = u.messageId)
+                            if (r is TdlResult.Success) record(r.result)
+                        }
+                    }
+                    is UpdateMessageEdited -> {
+                        recent.remove(u.chatId to u.messageId); notifyMessages(u.chatId)
+                        scope.launch {
+                            val r = client.getMessage(chatId = u.chatId, messageId = u.messageId)
+                            if (r is TdlResult.Success) record(r.result)
+                        }
                     }
                     is UpdateDeleteMessages -> if (u.isPermanent) forget(u.chatId, u.messageIds)
                     is UpdateMessageSendSucceeded -> { forget(u.message.chatId, longArrayOf(u.oldMessageId)); record(u.message); refreshChat(u.message.chatId) }

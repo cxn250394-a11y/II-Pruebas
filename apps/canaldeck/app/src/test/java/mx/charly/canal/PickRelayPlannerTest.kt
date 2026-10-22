@@ -155,4 +155,72 @@ class PickRelayPlannerTest {
         assertEquals(RelayAction.HOLD, plan(f.message.copy(kind = RelayContentKind.UNSUPPORTED)).action)
         assertEquals(RelayAction.DROP, PickRelayPlanner.plan(f.batch(), f.config, f.permissions(), f.now).action)
     }
+
+    @Test fun p1RecapsAndSettledPhotoCaptionsAreDroppedByRelayToo() {
+        val recaps = listOf("Resultados de ayer\n3 verdes y 1 rojo", "Recap del día", "Resumen de resultados", "Pick liquidado", "✅ GANADA")
+        for (text in recaps) for (kind in listOf(RelayContentKind.TEXT, RelayContentKind.PHOTO)) {
+            val out = plan(f.message.copy(text = text, kind = kind))
+            assertEquals(text, RelayAction.DROP, out.action)
+            assertEquals("RECAP_ONLY", out.reason)
+            assertNull(out.header); assertTrue(out.messageIds.isEmpty())
+        }
+    }
+
+    @Test fun p1MixedRecapAndNewPickRemainEligibleInDirectAndUnico() {
+        val text = "Resultados de ayer: +2U\nNueva jugada: Over 8.5 córners @1.80"
+        assertEquals(RelayAction.FORWARD_ALLOWED_MEDIA, plan(f.message.copy(text = text)).action)
+        val cfg = f.config.copy(sources = listOf(f.source.copy(policy = RelaySourcePolicy.UNICOREY_MEX)))
+        assertEquals(RelayAction.FORWARD_ALLOWED_MEDIA, plan(f.message.copy(text = "Tipster: Dr MLS\n$text"), cfg).action)
+    }
+
+    @Test fun p1AlbumRecapUsesWholeCaptionSetWithoutDiscardingMixedFreshPick() {
+        val a = f.message.copy(text = "Resumen del día: +2U", kind = RelayContentKind.PHOTO, albumId = 17)
+        val b = a.copy(messageId = 102, text = "")
+        val permissions = f.permissions(listOf(a, b))
+        val recap = PickRelayPlanner.plan(f.batch(a, b, album = true, size = 2), f.config, permissions, f.now)
+        assertEquals("RECAP_ONLY", recap.reason)
+        val next = b.copy(text = "Siguiente pick: Under 3.5 goles @1.70")
+        val mixed = PickRelayPlanner.plan(f.batch(a, next, album = true, size = 2), f.config, permissions, f.now)
+        assertEquals(RelayAction.FORWARD_ALLOWED_MEDIA, mixed.action)
+        assertEquals(listOf(101L, 102L), mixed.messageIds)
+    }
+
+    @Test fun p1ReservedAndQueryActionLinksBecomeExplicitlyUnavailable() {
+        for (link in listOf("https://t.me/addstickers/123", "https://t.me/invoice/123", "https://t.me/fanofutbol/123?startapp=x", "https://t.me/c/0/123"))
+            assertTrue(plan(f.message.copy(permalink = link)).header!!.endsWith("Link: No disponible"))
+        val topic = "https://t.me/c/123/456/789?single"
+        assertTrue(plan(f.message.copy(permalink = topic)).header!!.endsWith("Link: $topic"))
+    }
+
+    @Test fun p1ChangingTitleNeverTurnsMazditaPolicyIntoUnico() {
+        val message = f.message.copy(text = "Tipster: Dr MLS\nPick: Over 8.5 @1.80")
+        for (title in listOf("UnicoRey Mexicanos", "Mexicanos", "Fano Futbol")) {
+            val cfg = f.config.copy(sources = listOf(f.source.copy(title = title, policy = RelaySourcePolicy.MAZDITA_LEGACY)))
+            assertEquals("SOURCE_POLICY_UNAPPROVED", plan(message, cfg).reason)
+        }
+        val cfg = f.config.copy(sources = listOf(f.source.copy(title = "Mexicanos Mazdita", policy = RelaySourcePolicy.UNICOREY_MEX)))
+        assertEquals(RelayAction.FORWARD_ALLOWED_MEDIA, plan(message, cfg).action)
+        assertEquals(RelayAction.HOLD, plan(message.copy(sourceChatId = -222), cfg, f.permissions(sourceChat = -222)).action)
+    }
+
+    @Test fun p1FreshMarketBeforeHistoricalBalanceAndNonRecapSummaryArePreserved() {
+        val cases = listOf("Over 8.5 corners @1.80\nBalance de ayer: 2-1", "Resumen del partido\nOver 8.5 corners @1.80")
+        for (text in cases) {
+            assertEquals(RelayAction.FORWARD_ALLOWED_MEDIA, plan(f.message.copy(text = text)).action)
+            val cfg = f.config.copy(sources = listOf(f.source.copy(policy = RelaySourcePolicy.UNICOREY_MEX)))
+            assertEquals(RelayAction.FORWARD_ALLOWED_MEDIA, plan(f.message.copy(text = "Tipster: Dr MLS\n$text"), cfg).action)
+        }
+    }
+
+    @Test fun p1FreshLabelCannotRehabilitateConclusiveSettledStatus() {
+        for (text in listOf("Nueva jugada: GANADA ✅", "Pick de hoy: GANADA ✅", "Resultados de ayer\nNueva jugada: Cerrada, cobrada ✅",
+            "Nuevo pick: Over 8.5\nGANADA ✅", "Nueva jugada: Over 8.5 @1.80\nLIQUIDADA"))
+            assertEquals("RECAP_ONLY", plan(f.message.copy(text = text, kind = RelayContentKind.PHOTO)).reason)
+        assertEquals(RelayAction.FORWARD_ALLOWED_MEDIA, plan(f.message.copy(text = "Nueva jugada: Equipo A gana @1.80")).action)
+    }
+
+    @Test fun p1NewSelectionAfterClosedPriorBlockRemainsEligible() {
+        val text = "Nuevo pick: Over 8.5\nGANADA ✅\nSiguiente pick: Under 3.5 @1.70"
+        assertEquals(RelayAction.FORWARD_ALLOWED_MEDIA, plan(f.message.copy(text = text)).action)
+    }
 }

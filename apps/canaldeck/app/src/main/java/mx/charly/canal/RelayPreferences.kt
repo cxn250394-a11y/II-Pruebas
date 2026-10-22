@@ -24,9 +24,22 @@ class RelayPreferences(context: Context, val accountId: Long) {
         set(value) { state.healthy = value }
 
     private fun commit(edit: SharedPreferences.Editor): Boolean {
-        val saved = edit.commit()
+        if (!healthy) return false
+        val revision = p.getLong("revision", 0L)
+        if (revision < 0L || revision >= Long.MAX_VALUE - 1L) {
+            healthy = false
+            return false
+        }
+        // Persist the generation with the setting. A change away and back must
+        // invalidate work queued under the earlier consent, even within one second.
+        val saved = edit.putLong("revision", revision + 1L).commit()
         if (!saved) healthy = false
         return saved
+    }
+
+    fun revision(): Long = synchronized(lock) {
+        val revision = p.getLong("revision", 0L)
+        if (healthy && revision >= 0L) revision else Long.MAX_VALUE
     }
 
     fun destinationChatId(): Long = synchronized(lock) { if (healthy) p.getLong("destination", 0L) else 0L }

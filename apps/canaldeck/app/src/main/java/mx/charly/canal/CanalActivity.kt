@@ -297,6 +297,12 @@ class CanalActivity : Screen() {
                     ConnectionService.current?.clear(id)
                     toast("Avisos de picks desactivados")
                 } else {
+                    val account = TelegramSession.current?.accountId ?: 0L
+                    if (mode == PickWatchMode.RESELLER && (account <= 0L ||
+                            RelayPreferences(this, account).sourcePolicy(id)?.reseller != true)) {
+                        toast("Asigna primero esta conversación a su familia UnicoRey en Puente Pick$. Mazdita se configura por separado.")
+                        return@setSingleChoiceItems
+                    }
                     confirm("Activar SOLO avisos locales",
                         "Usa la conversación seleccionada, no su título. " +
                         "Canal directo avisa publicaciones nuevas; grupo de reventa solo identifica " +
@@ -431,6 +437,7 @@ class CanalActivity : Screen() {
         val s = TelegramSession.current ?: return
         val source = s.chats[m.chatId] ?: return
         val mode = org.pickMode(m.chatId)
+        val policy = RelayPreferences(this, s.accountId).sourcePolicy(m.chatId)
         val plain = when (val content = m.content) {
             is MessageText -> content.text.text
             is MessagePhoto -> content.caption.text
@@ -438,7 +445,7 @@ class CanalActivity : Screen() {
         }
         val item = PickBridgeRules.candidate(
             mode, source.title, plain, m.date.toLong(),
-            m.content is MessagePhoto, m.isOutgoing, m.editDate > 0
+            m.content is MessagePhoto, m.isOutgoing, m.editDate > 0, sourcePolicy = policy
         )
         if (item == null) {
             toast("No hay atribución válida de tipster o no es publicación nueva")

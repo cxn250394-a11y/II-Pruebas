@@ -23,8 +23,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Source and pinned dependency reference
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
+          test "$(git -C ../.. rev-parse HEAD)" = "$EXPECTED_HEAD"
+          echo "SOURCE_HEAD=$EXPECTED_HEAD"
           mkdir -p ../../canal-source
+          git -C ../.. rev-parse HEAD > ../../canal-source/SOURCE-COMMIT.txt
           git -C ../.. archive --format=zip HEAD apps/canaldeck .github/workflows/canaldeck.yml > ../../canal-source/source.zip
           curl --fail --location --max-time 90 'https://repo.maven.apache.org/maven2/dev/g000sha256/tdl-coroutines-android/14.0.0/tdl-coroutines-android-14.0.0-sources.jar' -o ../../canal-source/tdl-sources.jar
       - uses: actions/upload-artifact@v4
@@ -95,6 +100,13 @@ jobs:
         with:
           name: canaldeck-apk
           path: canal-apk
+      - name: Require APK from this exact source
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(cat canal-apk/SOURCE-COMMIT.txt)" = "$EXPECTED_HEAD"
+          echo "DEVICE_SOURCE_HEAD=$EXPECTED_HEAD"
       - name: KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

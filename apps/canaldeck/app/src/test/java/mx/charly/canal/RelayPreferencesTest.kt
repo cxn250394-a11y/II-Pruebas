@@ -110,6 +110,34 @@ class RelayPreferencesTest {
         assertNull(p.sourcePolicy(source - 99))
     }
 
+    @Test fun persistedRevisionDetectsPolicyAwayAndBackWithinSameSecond() {
+        val p = prefs()
+        assertEquals(0L, p.revision())
+        assertTrue(p.selectSourcePolicy(source, RelaySourcePolicy.UNICOREY_MEX, 100, 1000))
+        val before = p.revision()
+        assertTrue(p.selectSourcePolicy(source, RelaySourcePolicy.UNICOREY_KINGS, 100, 1000))
+        assertTrue(p.selectSourcePolicy(source, RelaySourcePolicy.UNICOREY_MEX, 100, 1000))
+        assertEquals(RelaySourcePolicy.UNICOREY_MEX, p.sourcePolicy(source))
+        assertEquals(100L, p.sourceBaseline(source))
+        assertEquals(1000L, p.enabledAt(source))
+        assertEquals(before + 2L, prefs().revision())
+        assertEquals(0L, RelayPreferences(context, account + 1).revision())
+    }
+
+    @Test fun everyCommittedConsentChangeInvalidatesPendingLocalWork() {
+        val p = prefs()
+        p.selectSourcePolicy(source, RelaySourcePolicy.FANO_DIRECT, 1, 1000)
+        val before = p.revision()
+        assertTrue(p.selectDestination(destination))
+        assertTrue(p.changeEnabled(true))
+        assertTrue(p.stop())
+        assertTrue(p.selectSource(source, PickWatchMode.OFF, 1, 1000))
+        assertEquals(before + 4L, prefs().revision())
+        val rejected = p.revision()
+        assertFalse(p.selectDestination(0))
+        assertEquals(rejected, p.revision())
+    }
+
     @Test fun invalidSelectionFailsClosed() {
         val p = prefs()
         assertFalse(p.selectDestination(0))
@@ -153,6 +181,7 @@ class RelayPreferencesTest {
         assertFalse(recreated.enabled)
         assertEquals(0L, recreated.destinationChatId())
         assertTrue(recreated.sources().isEmpty())
+        assertEquals(Long.MAX_VALUE, recreated.revision())
         assertFalse(recreated.selectDestination(destination - 1))
     }
 }

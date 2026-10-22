@@ -28,18 +28,19 @@ object PickRelayPlanner {
                 messages.size !in 2..10 || messages.any { it.kind != RelayContentKind.PHOTO }) return hold("ALBUM_INCOMPLETE")
         } else if (messages.size != 1) return hold("UNRELATED_MESSAGES")
         if (messages.all { it.kind == RelayContentKind.TEXT && it.text.isBlank() }) return drop("EMPTY_TEXT")
+        if (PickContentRules.isClearlyRecapOnly(messages.map { it.text })) return drop("RECAP_ONLY")
         val ordered = messages.sortedBy { it.messageId }
         val firstLine: String
         val verified: Boolean
         if (binding.policy.reseller) {
-            val attributed = messages.map { attribution(it.text) }
+            val attributed = messages.map { PickAttribution.parse(it.text) }
             if (attributed.any { it.invalid }) return drop("UNKNOWN_OR_AMBIGUOUS_TIPSTER")
             val names = attributed.mapNotNull { it.name }.distinct()
             if (names.size != 1) return drop("TIPSTER_NOT_EXACTLY_VERIFIED")
             firstLine = "Tipster: ${names.single()}"
             verified = true
         } else {
-            val title = binding.title.map { if (it.isISOControl() || it == '\u2028' || it == '\u2029') ' ' else it }.joinToString("").trim().take(100)
+            val title = PickBridgeRules.safeSourceTitle(binding.title)
             if (title.isBlank()) return hold("SOURCE_TITLE_UNAVAILABLE")
             firstLine = "Canal: $title"
             verified = false
@@ -71,18 +72,4 @@ object PickRelayPlanner {
         return candidate
     }
 
-    private data class Attribution(val name: String?, val invalid: Boolean)
-    private val prefix = Regex("""^\s*(?:tipster|pronosticador|picks?\s+de|by)\s*[:#\-]\s*(.+?)\s*$""", RegexOption.IGNORE_CASE)
-    private fun attribution(text: String): Attribution {
-        val allowed = PickBridgeRules.allowedTipsters.associateBy { PickBridgeRules.normalized(it) }
-        val found = mutableSetOf<String>()
-        var invalid = false
-        text.lineSequence().forEach { line ->
-            val explicit = prefix.matchEntire(line.trim())?.groupValues?.get(1)
-            val name = allowed[PickBridgeRules.normalized(explicit ?: line)]
-            if (explicit != null && name == null) invalid = true
-            if (name != null) found.add(name)
-        }
-        return Attribution(found.singleOrNull(), invalid || found.size > 1)
-    }
 }
