@@ -39,6 +39,18 @@ class TelegramSession private constructor(private val context: Context) {
     private val errorHandler = CoroutineExceptionHandler { _, _ -> status = "La conexión encontró un error. Desconecta y vuelve a conectar."; notifyUi() }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + errorHandler)
     private val client = TdlClient.create()
+    private val relayAdapter by lazy {
+        TdlRelayAdapter(client, { accountId }, { ready && !closing }, { candidate ->
+            if (candidate.accountId <= 0L || candidate.accountId != accountId) false
+            else {
+                val prefs = RelayPreferences(context, candidate.accountId)
+                prefs.enabled && prefs.destinationChatId() == candidate.destinationChatId &&
+                    prefs.sources().keys == candidate.sources.map { it.chatId }.toSet() &&
+                    candidate.sources.all { it.enabled && it.accountId == candidate.accountId &&
+                        prefs.sourcePolicy(it.chatId) == it.policy }
+            }
+        })
+    }
     val observers = CopyOnWriteArrayList<() -> Unit>()
     val messageObservers = CopyOnWriteArrayList<(Long) -> Unit>()
     val chats = linkedMapOf<Long, Chat>()
@@ -133,7 +145,7 @@ class TelegramSession private constructor(private val context: Context) {
                 filesDirectory = "${context.filesDir}/telegram/files", databaseEncryptionKey = v.databaseKey(),
                 useFileDatabase = true, useChatInfoDatabase = true, useMessageDatabase = true, useSecretChats = false,
                 apiId = id.toInt(), apiHash = hash, systemLanguageCode = "es", deviceModel = Build.MODEL,
-                systemVersion = "Android ${Build.VERSION.RELEASE}", applicationVersion = "CanalDeck 0.2 beta")
+                systemVersion = "Android ${Build.VERSION.RELEASE}", applicationVersion = "CanalDeck 0.4 beta")
             if (r is TdlResult.Failure) { configured = false; failure(r) }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { configured = false; status = "No se pudo abrir la configuración cifrada. Revisa tu identidad de aplicación."; notifyUi() }
     }
@@ -233,13 +245,56 @@ class TelegramSession private constructor(private val context: Context) {
             callback(PickBridgeRules.validTelegramLink(link))
         }
     }
-    fun media(fileId: Int, maxBytes: Long, callback: (String?) -> Unit) {
-        if (!ready || closing) { callback(null); return }
+    /** Read-only bridge snapshot on this same account/client. Never constructs an outgoing operation. */
+    fun relaySnapshot(
+        messages: List<Message>, albumComplete: Boolean, config: RelayConfig,
+        callback: (RelayBatch?, RelayPermissions?) -> Unit
+    ) {
+        if (!ready || closing || accountId <= 0L || config.accountId != accountId) {
+            callback(null, null); return
+        }
+        val expectedAccount = accountId
         scope.launch {
+            try {
+                val snapshot = relayAdapter.snapshot(messages, albumComplete, config)
+                if (!ready || closing || accountId != expectedAccount) callback(null, null)
+                else callback(snapshot?.first, snapshot?.second)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { callback(null, null) }
+        }
+    }
+
+    /** User-requested display only: recheck chat/message protection before any download. */
+    fun media(m: Message, fileId: Int, maxBytes: Long, callback: (String?) -> Unit) {
+        if (!ready || closing || accountId <= 0L || m.id <= 0L || maxBytes !in 1L..80_000_000L ||
+            m.selfDestructType != null) { callback(null); return }
+        val expectedAccount = accountId
+        scope.launch {
+            val chat = client.getChat(m.chatId)
+            val latest = client.getMessage(chatId = m.chatId, messageId = m.id)
+            val properties = client.getMessageProperties(chatId = m.chatId, messageId = m.id)
+            if (chat !is TdlResult.Success || latest !is TdlResult.Success || properties !is TdlResult.Success ||
+                chat.result.id != m.chatId || chat.result.hasProtectedContent ||
+                latest.result.chatId != m.chatId || latest.result.id != m.id || latest.result.selfDestructType != null ||
+                !properties.result.canBeSaved || properties.result.hasProtectedContentByCurrentUser ||
+                properties.result.hasProtectedContentByOtherUser ||
+                !ready || closing || accountId != expectedAccount) { callback(null); return@launch }
+            // Bind the requested file to the fresh message; don't accept an arbitrary cached file ID.
+            val file = when (val content = latest.result.content) {
+                is MessagePhoto -> content.photo.sizes.firstOrNull { it.photo.id == fileId }?.photo
+                is MessageVideo -> content.video.video.takeIf { it.id == fileId }
+                is MessageAudio -> content.audio.audio.takeIf { it.id == fileId }
+                is MessageVoiceNote -> content.voiceNote.voice.takeIf { it.id == fileId }
+                else -> null
+            }
+            if (file == null || file.size > maxBytes || file.expectedSize > maxBytes) {
+                callback(null); return@launch
+            }
             when (val r = client.downloadFile(fileId=fileId,priority=1,offset=0,limit=maxBytes+1,synchronous=true)) {
                 is TdlResult.Success -> {
                     val f = r.result
-                    callback(if (f.local.isDownloadingCompleted && f.size <= maxBytes && f.local.downloadedSize <= maxBytes) f.local.path else null)
+                    callback(if (ready && !closing && accountId == expectedAccount &&
+                        f.local.isDownloadingCompleted && f.size <= maxBytes && f.local.downloadedSize <= maxBytes) f.local.path else null)
                 }
                 else -> callback(null)
             }

@@ -20,14 +20,16 @@ class ConnectionService : Service() {
     private val seen = NoticeBook()
     private val lines = linkedMapOf<Long, MutableList<String>>()
     private var session: TelegramSession? = null
-    private val observer: () -> Unit = { updateConnection(); if (TelegramSession.current == null) stopSelf() }
+    private var relay: RelayCoordinator? = null
+    private val observer: () -> Unit = { relay?.onSessionChanged(); updateConnection(); if (TelegramSession.current == null) stopSelf() }
     override fun onCreate() {
         super.onCreate(); current = this; lastError = null
         manager.createNotificationChannel(NotificationChannel("connection", "Conexión de CanalDeck", NotificationManager.IMPORTANCE_LOW))
         startForeground(1, connectionNotification("Iniciando motor de Telegram"))
         try {
             session = TelegramSession.start(this)
-            session?.onMessage = { notice(it) }; session?.onRead = { clear(it) }
+            relay = session?.let { RelayCoordinator(this, it) }
+            session?.onMessage = { relay?.onLiveMessage(it); notice(it) }; session?.onRead = { clear(it) }
             session?.observers?.add(observer); updateConnection()
         } catch (_: Throwable) { lastError = "No se pudo cargar el motor de Telegram. No se inició sesión."; stopSelf() }
     }
@@ -128,6 +130,7 @@ class ConnectionService : Service() {
                 .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
                 .setContentIntent(pending).setAutoCancel(true)
                 .setVisibility(Notification.VISIBILITY_PRIVATE).build())
+        if (pickTitle != null) relay?.onLocalNotified(m)
         summary()
     }
 
@@ -140,6 +143,6 @@ class ConnectionService : Service() {
     }
     fun clear(chat: Long) { lines.remove(chat);manager.cancel(chat.toString(),2000);summary() }
     fun clearAll() { lines.keys.toList().forEach{manager.cancel(it.toString(),2000)};lines.clear();manager.cancel(2) }
-    override fun onDestroy() { clearAll();session?.observers?.remove(observer);session?.stop();session=null;current=null;super.onDestroy() }
+    override fun onDestroy() { clearAll();relay?.close();relay=null;session?.observers?.remove(observer);session?.stop();session=null;current=null;super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
 }

@@ -14,9 +14,11 @@ subprojects { p ->
             minSdk 28
             if (p.name == 'app') {
                 applicationId 'mx.charly.canal'
+                // Literal compiled fuse: no Gradle property, remote config or UI can open it.
+                buildConfigField 'boolean', 'PICK_RELAY_REAL_ENABLED', 'false'
                 targetSdk 35
-                versionCode 3
-                versionName '0.3.0-beta'
+                versionCode 4
+                versionName '0.4.0-beta'
                 ndk { abiFilters 'arm64-v8a', 'x86_64' }
                 testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
             }

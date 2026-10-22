@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "notice_template": "Canal: <nombre> | Tipster: <nombre> (elegir solo uno)\nHora original: <timestamp original CDMX | No disponible>\nLink: <URL original verificada | No disponible>",
+  "notifications_enabled": false,
+  "archive_without_alerts_enabled": false,
+  "rule": "DEFAULT_OFF_AND_SOURCE_ID_REQUIRED",
+  "tipster_allowlists": {
+    "unicorey_12": [
+      "Dr MLS",
+      "Diego Palafox",
+      "LaraBasado",
+      "Zorrito VIP",
+      "Koala Picks",
+      "Revolver Bets",
+      "Renne NFL",
+      "Rodrigo Picks",
+      "Alfredo Valenzuela",
+      "Tennis Insider",
+      "Sharp Investment",
+      "Bet Data"
+    ]
+  },
+  "sources": [
+    {
+      "key": "unicorey_mex",
+      "name": "🇲🇽Mexicanos - OCTUBRE",
+      "source_type": "reseller",
+      "verified_chat_id": null,
+      "identity_status": "PRIVATE_REGISTRY_ID_REQUIRED",
+      "alert_enabled": false,
+      "tipster_allowlist": "unicorey_12",
+      "note": "Separar fuente por chat_id; no confundir Mexicanos con Mazdita"
+    },
+    {
+      "key": "unicorey_foreign",
+      "name": "🇺🇸 Extranjeros - OCTUBRE",
+      "source_type": "reseller",
+      "verified_chat_id": null,
+      "identity_status": "PRIVATE_REGISTRY_ID_REQUIRED",
+      "alert_enabled": false,
+      "tipster_allowlist": "unicorey_12",
+      "note": "Separar fuente por chat_id; no confundir Mexicanos con Mazdita"
+    },
+    {
+      "key": "unicorey_popular",
+      "name": "✨Populares - OCTUBRE",
+      "source_type": "reseller",
+      "verified_chat_id": null,
+      "identity_status": "PRIVATE_REGISTRY_ID_REQUIRED",
+      "alert_enabled": false,
+      "tipster_allowlist": "unicorey_12",
+      "note": "Separar fuente por chat_id; no confundir Mexicanos con Mazdita"
+    },
+    {
+      "key": "unicorey_kings",
+      "name": "Los Reyes - OCTUBRE",
+      "source_type": "reseller",
+      "verified_chat_id": null,
+      "identity_status": "PRIVATE_REGISTRY_ID_REQUIRED",
+      "alert_enabled": false,
+      "tipster_allowlist": "unicorey_12",
+      "note": "Separar fuente por chat_id; no confundir Mexicanos con Mazdita"
+    },
+    {
+      "key": "gallito_vip",
+      "name": "Gallito VIP - OCTUBRE",
+      "source_type": "unverified",
+      "verified_chat_id": null,
+      "identity_status": "UNKNOWN",
+      "alert_enabled": false,
+      "note": "Tipo, ID y pertenencia a UnicoRey por confirmar"
+    },
+    {
+      "key": "grupo_elite_5",
+      "name": "GRUPO ELITE 5 | OCTUBRE",
+      "source_type": "unverified",
+      "verified_chat_id": null,
+      "identity_status": "UNKNOWN",
+      "alert_enabled": false,
+      "note": "Tipo, ID y pertenencia por confirmar"
+    },
+    {
+      "key": "mazdita_original",
+      "name": "Mexicanos (Mazdita Picks)",
+      "source_type": "reseller",
+      "verified_chat_id": null,
+      "identity_status": "UNKNOWN",
+      "alert_enabled": false,
+      "note": "Filtro legacy Rodrigo O MLS permanece sin cambios; no hereda allowlist UnicoRey"
+    },
+    {
+      "key": "premium_prive",
+      "name": "PREMIUM PRIVE",
+      "source_type": "direct",
+      "verified_chat_id": null,
+      "identity_status": "PRIVATE_REGISTRY_ID_REQUIRED",
+      "alert_enabled": false,
+      "note": "Contenido protegido: aviso + enlace, no copiar medios"
+    },
+    {
+      "key": "rayo_free",
+      "name": "Rayo Free Picks",
+      "source_type": "direct",
+      "verified_chat_id": null,
+      "identity_status": "UNKNOWN",
+      "alert_enabled": false,
+      "note": "Fuente de Telegram declarada por Charly, ID por verificar"
+    },
+    {
+      "key": "jc_footy",
+      "name": "JC FOOTY TIPS",
+      "source_type": "direct",
+      "verified_chat_id": null,
+      "identity_status": "UNKNOWN",
+      "alert_enabled": false,
+      "note": "ID por verificar"
+    },
+    {
+      "key": "jts_footy",
+      "name": "Jtsfootytips",
+      "source_type": "direct",
+      "verified_chat_id": null,
+      "identity_status": "UNKNOWN",
+      "alert_enabled": false,
+      "note": "ID por verificar"
+    },
+    {
+      "key": "fano_futbol",
+      "name": "Fano Futbol",
+      "source_type": "direct",
+      "verified_chat_id": null,
+      "identity_status": "UNKNOWN",
+      "alert_enabled": false,
+      "note": "Canal directo nuevo solicitado 22-oct: foto + texto, un aviso por mensaje o álbum; identidad y permisos por verificar"
+    }
+  ],
+  "metrics": {
+    "source_post_count": "NOT_MEASURED",
+    "source_detection_count": "NOT_MEASURED",
+    "mazdita_vs_unicorey": "UNKNOWN_WITHOUT_LIVE_COUNTS"
+  }
+}

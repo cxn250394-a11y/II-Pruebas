@@ -68,7 +68,7 @@ object PickBridgeRules {
                 Regex("^/[A-Za-z0-9_]{5,32}/[0-9]+$").matches(path)
             if (uri.scheme != "https" || uri.userInfo != null || uri.port != -1 ||
                 uri.fragment != null || uri.host?.lowercase(Locale.ROOT) !in setOf("t.me", "telegram.me") ||
-                !messagePath
+                !messagePath || path.startsWith("/joinchat/", ignoreCase = true)
             ) null else link
         } catch (_: Exception) { null }
     }
