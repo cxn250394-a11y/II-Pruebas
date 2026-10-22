@@ -6,7 +6,10 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
-import dev.g000sha256.tdl.dto.*
+import dev.g000sha256.tdl.dto.Message
+import dev.g000sha256.tdl.dto.MessagePhoto
+import dev.g000sha256.tdl.dto.MessageDocument
+import dev.g000sha256.tdl.dto.ChatTypeSupergroup
 import java.util.Calendar
 
 /** Visible, opt-in connection. No FCM credentials, hidden receiver or restart after explicit stop. */
@@ -57,8 +60,9 @@ class ConnectionService : Service() {
                 (watch == PickWatchMode.DIRECT_CHANNEL && !(selected.type as ChatTypeSupergroup).isChannel)) return
             if (quiet || s.visibleChat == m.chatId || m.isFromOffline) return
             val body = TelegramSession.pickText(m.content)
-            val hasImage = m.content is MessagePhoto ||
-                (m.content is MessageDocument && m.content.document.mimeType.startsWith("image/"))
+            val c = m.content
+            val hasImage = c is MessagePhoto ||
+                (c is MessageDocument && c.document.mimeType.startsWith("image/"))
             val plan = PickWatchRules.propose(
                 watch, selected.title, body, hasImage, m.date.toLong(),
                 System.currentTimeMillis() / 1000, m.isOutgoing, m.editDate > 0
