@@ -258,12 +258,41 @@ class CanalActivity : Screen() {
     private fun organize(id:Long){
         if(TelegramSession.current?.ready!=true)return
         dialog().setTitle(TelegramSession.current?.chats?.get(id)?.title ?: "Organizar")
-            .setItems(arrayOf(if(org.favorite(id))"Quitar favorito"else"Marcar favorito","Mover a carpeta","Configurar avisos de este chat")){_,i->when(i){
+            .setItems(arrayOf(if(org.favorite(id))"Quitar favorito"else"Marcar favorito",
+                "Mover a carpeta","Configurar avisos de este chat","Avisos de picks (Canal / Tipster)")){_,i->when(i){
                 0->{org.toggleFavorite(id);refreshChats()}
                 1->{val fs=listOf("" to "Sin carpeta")+org.folders();dialog().setTitle("Carpeta local").setItems(fs.map{it.second}.toTypedArray()){_,n->org.assign(id,fs[n].first);refreshChats()}.setNegativeButton("Cancelar",null).show()}
-                else->noticeSettings(id)
+                2->noticeSettings(id)
+                else->pickSettings(id)
             }}.show()
     }
+    private fun pickSettings(id:Long){
+        val s=TelegramSession.current ?: return
+        if(!s.ready || id !in s.chats) return
+        val box=column().apply{setPadding(dp(20),0,dp(20),0)}
+        val choices=RadioGroup(this)
+        val names=listOf("Apagados","Canal directo (Fano, Privé, etc.)","Grupo revendedor (12 tipsters autorizados)")
+        names.forEachIndexed{i,name->choices.addView(RadioButton(this).apply{
+            this.id=700+i;text=name;setTextColor(Color.WHITE)
+        })}
+        choices.check(700+org.pickMode(id).ordinal);box.addView(choices)
+        box.addView(text("Solo avisos locales en este teléfono. No reenvía al canal Pick$, " +
+            "no descarga imágenes ni abre otra sesión TDLib. Selecciona la fuente por su chat real, " +
+            "nunca solo por su nombre. Los mensajes anteriores no se reproducen.",12f,soft))
+        dialog().setTitle("Avisos externos · CanalDeck").setView(box)
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Guardar"){_,_->
+                val selected=PickSourceMode.entries.getOrElse(choices.checkedRadioButtonId-700){PickSourceMode.OFF}
+                val baseline=s.chats[id]?.lastMessage?.id ?: 0L
+                if(org.pickMode(id,selected,baseline)){
+                    if(selected!=PickSourceMode.OFF&&Build.VERSION.SDK_INT>=33)
+                        requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),10)
+                    toast(if(selected==PickSourceMode.OFF)"Avisos de picks desactivados"
+                         else "Avisos locales activos para este chat · sin envíos a Pick$")
+                } else toast("No se guardó esta selección")
+            }.show()
+    }
+
     private fun noticeSettings(id:Long){
         val box=column().apply{setPadding(dp(20),0,dp(20),0)}
         val choices=RadioGroup(this);val names=listOf("Apagados","Cada publicación nueva","Solo si contiene mis palabras")
