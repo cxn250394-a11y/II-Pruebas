@@ -43,7 +43,7 @@ class ConnectionService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int { if(intent?.action=="stop") stopSelf(); return START_NOT_STICKY }
     /**
      * Private phone notification only. No Bot API, TDLib forwarding, media transfer,
-     * RS1000 calls or changes to the current Pick$ channel.
+     * remote host calls or changes to the current Pick$ channel.
      */
     private fun pickNotice(s: TelegramSession, m: Message, org: Organization): Boolean {
         val mode = org.pickMode(m.chatId)
@@ -74,7 +74,6 @@ class ConnectionService : Service() {
         // Albums consist of multiple messages. This strictly consumes only the first
         // qualifying message and does not combine captions across unrelated posts.
         if (!org.acceptPick(m.chatId, m.id, timestamp, m.mediaAlbumId)) return false
-        val protected = chat.hasProtectedContent || m.selfDestructType != null
         s.pickMessageLink(m.chatId, m.id, m.mediaAlbumId != 0L) { link ->
             if (session !== s || !s.ready) return@pickMessageLink
             val rendered = PickAlertPolicy.render(candidate, link)
@@ -90,13 +89,12 @@ class ConnectionService : Service() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             // For protected sources the notice contains NO text/caption/image from
             // Telegram. The same is true for unprotected sources: only metadata.
-            val body = if (protected) rendered else rendered
             manager.notify("picks-" + m.chatId, 3000,
                 Notification.Builder(this, id)
                     .setSmallIcon(mx.charly.ui.R.drawable.ic_suite)
                     .setContentTitle("Pick externo · sin verificar")
                     .setContentText(candidate.heading)
-                    .setStyle(Notification.BigTextStyle().bigText(body))
+                    .setStyle(Notification.BigTextStyle().bigText(rendered))
                     .setContentIntent(pending)
                     .setAutoCancel(true)
                     .setVisibility(Notification.VISIBILITY_PRIVATE)
