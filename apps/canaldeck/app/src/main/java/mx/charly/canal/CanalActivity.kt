@@ -293,7 +293,7 @@ class CanalActivity : Screen() {
                 d.dismiss()
                 val mode = PickWatchMode.entries[choice]
                 if (mode == PickWatchMode.OFF) {
-                    org.pickMode(id, mode)
+                    org.pickMode(id, mode, TelegramSession.current?.chats?.get(id)?.lastMessage?.id ?: 0L)
                     ConnectionService.current?.clear(id)
                     toast("Avisos de picks desactivados")
                 } else {
@@ -302,7 +302,7 @@ class CanalActivity : Screen() {
                         "Canal directo avisa publicaciones nuevas; grupo de reventa solo identifica " +
                         "los 12 nombres si están expresamente atribuidos. " +
                         "No reenvía a Pick$, no descarga imágenes y no activa Ferrari.") {
-                        org.pickMode(id, mode)
+                        org.pickMode(id, mode, TelegramSession.current?.chats?.get(id)?.lastMessage?.id ?: 0L)
                         ConnectionService.current?.clear(id)
                         if (Build.VERSION.SDK_INT >= 33)
                             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 9)
