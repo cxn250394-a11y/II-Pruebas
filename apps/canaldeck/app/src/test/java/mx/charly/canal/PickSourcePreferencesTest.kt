@@ -40,10 +40,10 @@ class PickSourcePreferencesTest {
     @Test fun survivesRestartAndDeduplicatesAlbums() {
         val now = (System.currentTimeMillis() / 1000L) + 10L
         val first = Organization(context, account)
-        assertTrue(first.pickMode(chat, PickWatchMode.CANAL, latestMessageId = 100L))
+        assertTrue(first.pickMode(chat, PickWatchMode.DIRECT, latestMessageId = 100L))
         assertTrue(first.acceptPick(chat, 101L, now, albumId = 74L))
         val afterRestart = Organization(context, account)
-        assertEquals(PickWatchMode.CANAL, afterRestart.pickMode(chat))
+        assertEquals(PickWatchMode.DIRECT, afterRestart.pickMode(chat))
         assertFalse(afterRestart.acceptPick(chat, 101L, now, 74L))
         assertFalse(afterRestart.acceptPick(chat, 102L, now, 74L))
         assertTrue(afterRestart.acceptPick(chat, 103L, now, 0L))
@@ -52,7 +52,7 @@ class PickSourcePreferencesTest {
     @Test fun noReplayAfterUserDisablesAndReenables() {
         val p = Organization(context, account)
         val now = (System.currentTimeMillis() / 1000L) + 10L
-        assertTrue(p.pickMode(chat, PickWatchMode.CANAL, 10L))
+        assertTrue(p.pickMode(chat, PickWatchMode.DIRECT, 10L))
         assertTrue(p.acceptPick(chat, 11L, now, 0L))
         assertTrue(p.pickMode(chat, PickWatchMode.OFF))
         assertFalse(p.acceptPick(chat, 12L, now, 0L))
