@@ -21,7 +21,7 @@ class PickSourcePreferencesTest {
 
     @Test fun offDefaultAndNoUninitializedReplays() {
         val p = Organization(context, account)
-        val now = System.currentTimeMillis() / 1000L
+        val now = (System.currentTimeMillis() / 1000L) + 10L
         assertEquals(PickWatchMode.OFF, p.pickMode(chat))
         assertFalse(p.acceptPick(chat, 10L, now, 0L))
         assertFalse(p.acceptPick(chat, 0L, now, 0L))
@@ -29,7 +29,7 @@ class PickSourcePreferencesTest {
 
     @Test fun newEnabledChatSkipsPriorMessages() {
         val p = Organization(context, account)
-        val now = System.currentTimeMillis() / 1000L
+        val now = (System.currentTimeMillis() / 1000L) + 10L
         assertTrue(p.pickMode(chat, PickWatchMode.RESELLER, latestMessageId = 100L))
         assertFalse(p.acceptPick(chat, 99L, now, 0L))
         assertFalse(p.acceptPick(chat, 100L, now, 0L))
@@ -38,7 +38,7 @@ class PickSourcePreferencesTest {
     }
 
     @Test fun survivesRestartAndDeduplicatesAlbums() {
-        val now = System.currentTimeMillis() / 1000L
+        val now = (System.currentTimeMillis() / 1000L) + 10L
         val first = Organization(context, account)
         assertTrue(first.pickMode(chat, PickWatchMode.CANAL, latestMessageId = 100L))
         assertTrue(first.acceptPick(chat, 101L, now, albumId = 74L))
@@ -51,7 +51,7 @@ class PickSourcePreferencesTest {
 
     @Test fun noReplayAfterUserDisablesAndReenables() {
         val p = Organization(context, account)
-        val now = System.currentTimeMillis() / 1000L
+        val now = (System.currentTimeMillis() / 1000L) + 10L
         assertTrue(p.pickMode(chat, PickWatchMode.CANAL, 10L))
         assertTrue(p.acceptPick(chat, 11L, now, 0L))
         assertTrue(p.pickMode(chat, PickWatchMode.OFF))
@@ -62,7 +62,7 @@ class PickSourcePreferencesTest {
     }
 
     @Test fun isolatedByAccountAndChatId() {
-        val now = System.currentTimeMillis() / 1000L
+        val now = (System.currentTimeMillis() / 1000L) + 10L
         val p = Organization(context, account)
         assertTrue(p.pickMode(chat, PickWatchMode.RESELLER, 10L))
         assertEquals(PickWatchMode.OFF, Organization(context, account + 1).pickMode(chat))
