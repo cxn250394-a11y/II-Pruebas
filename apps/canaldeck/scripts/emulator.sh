@@ -4,7 +4,7 @@ mkdir -p canal-device
 adb install -r canal-apk/CanalDeck-v0.2-beta.apk
 adb install -r canal-apk/tests.apk
 adb logcat -c
-adb shell am instrument -w mx.charly.canal.test/android.test.InstrumentationTestRunner | tee canal-device/instrumentation.txt
+adb shell am instrument -w mx.charly.canal.test/androidx.test.runner.AndroidJUnitRunner | tee canal-device/instrumentation.txt
 grep -q 'OK (' canal-device/instrumentation.txt
 ! grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|Process crashed' canal-device/instrumentation.txt
 adb shell am start -W -n mx.charly.canal/.CanalActivity | tee canal-device/launch.txt

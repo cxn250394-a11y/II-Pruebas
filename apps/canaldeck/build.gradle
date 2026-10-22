@@ -18,7 +18,7 @@ subprojects { p ->
                 versionCode 2
                 versionName '0.2.0-beta'
                 ndk { abiFilters 'arm64-v8a', 'x86_64' }
-                testInstrumentationRunner 'android.test.InstrumentationTestRunner'
+                testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
             }
         }
         compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
@@ -37,5 +37,7 @@ project(':app') {
         implementation project(':ui')
         implementation 'dev.g000sha256:tdl-coroutines-android:14.0.0'
         implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
+        androidTestImplementation 'androidx.test:runner:1.6.2'
+        androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     }
 }
