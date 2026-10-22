@@ -1,0 +1,43 @@
+plugins {
+    id 'com.android.application' version '9.2.1' apply false
+    id 'com.android.library' version '9.2.1' apply false
+    id 'org.jetbrains.kotlin.android' version '2.4.10' apply false
+}
+subprojects { p ->
+    apply plugin: p.name == 'ui' ? 'com.android.library' : 'com.android.application'
+    apply plugin: 'org.jetbrains.kotlin.android'
+    android {
+        namespace p.name == 'ui' ? 'mx.charly.ui' : 'mx.charly.canal'
+        compileSdk 37
+        buildToolsVersion '37.0.0'
+        defaultConfig {
+            minSdk 28
+            if (p.name == 'app') {
+                applicationId 'mx.charly.canal'
+                targetSdk 35
+                versionCode 2
+                versionName '0.2.0-beta'
+                ndk { abiFilters 'arm64-v8a', 'x86_64' }
+                testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+            }
+        }
+        compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+        kotlinOptions { jvmTarget = '17' }
+        testOptions { unitTests.includeAndroidResources = true }
+        buildFeatures { buildConfig true }
+        packaging { resources { excludes += ['META-INF/LICENSE*', 'META-INF/NOTICE*', 'META-INF/AL2.0', 'META-INF/LGPL2.1'] } }
+    }
+    dependencies {
+        testImplementation 'junit:junit:4.13.2'
+        testImplementation 'org.robolectric:robolectric:4.14.1'
+    }
+}
+project(':app') {
+    dependencies {
+        implementation project(':ui')
+        implementation 'dev.g000sha256:tdl-coroutines-android:14.0.0'
+        implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
+        androidTestImplementation 'androidx.test:runner:1.6.2'
+        androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    }
+}
