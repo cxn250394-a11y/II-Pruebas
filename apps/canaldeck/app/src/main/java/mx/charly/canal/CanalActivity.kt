@@ -24,7 +24,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Native client UI. Demo is explicit and cannot initiate requests, send messages or persist organization. */
+/** Native client UI. Demo cannot initiate requests, send messages or persist organization. */
 class CanalActivity : Screen() {
     private var screen = "home"
     private var demo = false
@@ -175,14 +175,14 @@ class CanalActivity : Screen() {
             is AuthorizationStateWaitEmailCode->"Código recibido por correo"
             else->null
         }
-        if(state is AuthorizationStateWaitCode){label("El destino del código lo decide Telegram. Revisa tu app oficial y la vía indicada por Telegram; no siempre llega por SMS.",13f,soft)}
+        if(state is AuthorizationStateWaitCode)label("El destino del código lo decide Telegram. Revisa tu app oficial y la vía indicada por Telegram; no siempre llega por SMS.",13f,soft)
         if(state is AuthorizationStateWaitPassword && state.passwordHint.isNotBlank())label("Pista de contraseña: ${state.passwordHint}",13f,soft)
         if(hint!=null){
             val secret=state !is AuthorizationStateWaitPhoneNumber && state !is AuthorizationStateWaitEmailAddress
             val input=field(hint,password=secret);input.isSaveEnabled=false;input.importantForAutofill=View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
             if(state is AuthorizationStateWaitPhoneNumber)input.inputType=InputType.TYPE_CLASS_PHONE
             if(state is AuthorizationStateWaitEmailAddress)input.inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-            authButton=button("Continuar",true){if(s.state?.javaClass!=state.javaClass){login();return@button};val value=input.text.toString();input.text.clear();s.authenticate(value)}
+            authButton=button("Continuar",true){if(s.state?.javaClass!=state?.javaClass){login();return@button};val value=input.text.toString();input.text.clear();s.authenticate(value)}
             if(state is AuthorizationStateWaitCode)button("Solicitar otro código"){confirm("Solicitar código","Telegram aplica límites y puede pedirte esperar. ¿Solicitar un nuevo código?"){s.resendCode()}}
         }else label("Si Telegram exige registro nuevo, compra, passkey u otra comprobación no soportada, esta beta no la omite. Conserva la aplicación oficial para esos casos.",13f,soft)
         button("Actualizar estado"){login()};button("Volver"){home()}
@@ -306,7 +306,8 @@ class CanalActivity : Screen() {
     private fun openChat(id:Long){
         val s=TelegramSession.current ?: return
         if(!s.ready)return
-        saveDraft();activeChat=id;history=emptyList();reply=null;searchHistory=false;historyTicket++;historyLayout();s.showChat(id);loadHistory()
+        saveDraft();composer=null
+        activeChat=id;history=emptyList();reply=null;searchHistory=false;historyTicket++;historyLayout();s.showChat(id);loadHistory()
     }
     private fun historyLayout(){
         val chat=TelegramSession.current?.chats?.get(activeChat)
@@ -417,7 +418,7 @@ class CanalActivity : Screen() {
                 mediaPlayer=MediaPlayer().apply{setDataSource(path);setOnPreparedListener{it.start()};setOnErrorListener{_,_,_->toast("Audio no compatible");true};prepareAsync()}
                 mediaDialog=AlertDialog.Builder(this).setTitle("Audio de Telegram").setView(box).setPositiveButton("Cerrar",null).create();mediaDialog?.setOnDismissListener{mediaPlayer?.release();mediaPlayer=null}
             }
-            mediaDialog?.show();mediaDialog?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            mediaDialog?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE);mediaDialog?.show()
         }catch(_:Exception){mediaPlayer?.release();mediaPlayer=null;toast("No se pudo abrir el contenido de forma segura")}
     }
 }
