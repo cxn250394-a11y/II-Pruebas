@@ -31,6 +31,32 @@ class Organization(context: Context, accountId: Long) {
     fun mode(chat: Long, mode: NoticeMode) { p.edit().putInt("notice-$chat", mode.ordinal).apply() }
     fun words(chat: Long) = p.getString("words-$chat", "").orEmpty()
     fun words(chat: Long, value: String) { p.edit().putString("words-$chat", value.take(2400)).apply() }
+
+    // Device-local pick notices are distinct from Telegram sending / Pick$ channel forwarding.
+    // A chat must be enabled explicitly from its actual chat ID in the UI.
+    fun pickMode(chat: Long): PickSourceMode = PickSourceMode.entries.getOrElse(
+        p.getInt("pick-mode-$chat", 0)
+    ) { PickSourceMode.OFF }
+
+    fun pickMode(chat: Long, mode: PickSourceMode, currentLastId: Long): Boolean {
+        if (chat == 0L) return false
+        val baseline = currentLastId.coerceAtLeast(0L)
+        // Baseline and mode are committed together: do not replay existing history.
+        return p.edit().putLong("pick-id-$chat", baseline)
+            .putLong("pick-enabled-at-$chat", System.currentTimeMillis() / 1000L)
+            .putLong("pick-album-$chat", 0L)
+            .putInt("pick-mode-$chat", mode.ordinal).commit()
+    }
+
+    fun acceptPick(chat: Long, messageId: Long, sourceDate: Long, albumId: Long): Boolean {
+        if (pickMode(chat) == PickSourceMode.OFF || messageId <= 0L ||
+            sourceDate < p.getLong("pick-enabled-at-$chat", Long.MAX_VALUE) ||
+            messageId <= p.getLong("pick-id-$chat", Long.MAX_VALUE)) return false
+        if (albumId != 0L && albumId == p.getLong("pick-album-$chat", 0L)) return false
+        // Write dedup checkpoint before displaying; uncertain delivery means no blind replay.
+        return p.edit().putLong("pick-id-$chat", messageId)
+            .putLong("pick-album-$chat", albumId).commit()
+    }
     var previews: Boolean
         get() = p.getBoolean("previews", false)
         set(v) { p.edit().putBoolean("previews", v).apply() }
