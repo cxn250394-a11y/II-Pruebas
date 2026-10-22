@@ -32,8 +32,24 @@ class Organization(context: Context, accountId: Long) {
     /** Owner-enabled per account and exact chat ID; never enable by a matching title. */
     fun pickMode(chat: Long): PickWatchMode = PickWatchMode.entries
         .getOrElse(p.getInt("pick-mode-$chat", 0)) { PickWatchMode.OFF }
-    fun pickMode(chat: Long, mode: PickWatchMode) {
-        p.edit().putInt("pick-mode-$chat", mode.ordinal).apply()
+    fun pickMode(chat: Long, mode: PickWatchMode, latestMessageId: Long = 0L): Boolean {
+        if (chat == 0L) return false
+        // Enabling never replays an existing channel history, even after app restart.
+        return p.edit().putInt("pick-mode-$chat", mode.ordinal)
+            .putLong("pick-enabled-at-$chat", System.currentTimeMillis() / 1000L)
+            .putLong("pick-last-id-$chat", latestMessageId.coerceAtLeast(0L))
+            .putLong("pick-last-album-$chat", 0L).commit()
+    }
+    /** Durable, account-scoped anti-replay: no captions, images or messages saved here. */
+    fun acceptPick(chat: Long, messageId: Long, date: Long, albumId: Long): Boolean {
+        if (pickMode(chat) == PickWatchMode.OFF || messageId <= 0L ||
+            date < p.getLong("pick-enabled-at-$chat", Long.MAX_VALUE) ||
+            messageId <= p.getLong("pick-last-id-$chat", Long.MAX_VALUE) ||
+            (albumId != 0L && albumId == p.getLong("pick-last-album-$chat", 0L)))
+            return false
+        // Commit before the external notification, never auto-repeat after uncertainty.
+        return p.edit().putLong("pick-last-id-$chat", messageId)
+            .putLong("pick-last-album-$chat", albumId).commit()
     }
     fun words(chat: Long) = p.getString("words-$chat", "").orEmpty()
     fun words(chat: Long, value: String) { p.edit().putString("words-$chat", value.take(2400)).apply() }
