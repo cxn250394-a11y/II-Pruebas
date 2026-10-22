@@ -23,8 +23,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Source and pinned dependency reference
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
+          test "$(git -C ../.. rev-parse HEAD)" = "$EXPECTED_HEAD"
+          echo "SOURCE_HEAD=$EXPECTED_HEAD"
           mkdir -p ../../canal-source
+          git -C ../.. rev-parse HEAD > ../../canal-source/SOURCE-COMMIT.txt
           git -C ../.. archive --format=zip HEAD apps/canaldeck .github/workflows/canaldeck.yml > ../../canal-source/source.zip
           curl --fail --location --max-time 90 'https://repo.maven.apache.org/maven2/dev/g000sha256/tdl-coroutines-android/14.0.0/tdl-coroutines-android-14.0.0-sources.jar' -o ../../canal-source/tdl-sources.jar
       - uses: actions/upload-artifact@v4
@@ -44,19 +49,22 @@ jobs:
         with:
           gradle-version: '9.6.1'
       - name: Privacy and isolation checks
-        run: python3 scripts/check-source.py
+        run: |
+          python3 scripts/check-source.py
+          python3 scripts/check-relay-offline.py
       - name: Tests, lint, APK and instrumentation test package
         run: |
           set -o pipefail
           gradle --no-daemon --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest 2>&1 | tee build-ci.log
+          python3 scripts/report-jvm.py
       - name: Verify APK
         run: |
           mkdir -p ../../canal-apk
-          cp app/build/outputs/apk/debug/app-debug.apk ../../canal-apk/CanalDeck-v0.3-beta.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../../canal-apk/CanalDeck-v0.4-beta.apk
           cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk ../../canal-apk/tests.apk
           cd ../../canal-apk
-          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs CanalDeck-v0.3-beta.apk > APK-VERIFY.txt
-          sha256sum CanalDeck-v0.3-beta.apk > SHA256SUMS.txt
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs CanalDeck-v0.4-beta.apk > APK-VERIFY.txt
+          sha256sum CanalDeck-v0.4-beta.apk > SHA256SUMS.txt
           git -C .. rev-parse HEAD > SOURCE-COMMIT.txt
       - uses: actions/upload-artifact@v4
         with:
@@ -73,6 +81,7 @@ jobs:
             apps/canaldeck/build-ci.log
             apps/canaldeck/app/build/test-results/testDebugUnitTest/*.xml
             apps/canaldeck/app/build/reports/lint-results-debug.*
+            apps/canaldeck/evidence/*.json
           retention-days: 14
   device-tests:
     needs: build
@@ -91,6 +100,13 @@ jobs:
         with:
           name: canaldeck-apk
           path: canal-apk
+      - name: Require APK from this exact source
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(cat canal-apk/SOURCE-COMMIT.txt)" = "$EXPECTED_HEAD"
+          echo "DEVICE_SOURCE_HEAD=$EXPECTED_HEAD"
       - name: KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

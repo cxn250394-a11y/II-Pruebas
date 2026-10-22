@@ -14,6 +14,17 @@ adb install -r "${apk_files[0]}"
 adb install -r canal-apk/tests.apk
 adb logcat -c
 adb shell am instrument -w mx.charly.canal.test/androidx.test.runner.AndroidJUnitRunner | tee canal-device/instrumentation.txt
+adb exec-out run-as mx.charly.canal cat files/canaldeck-relay-evidence.json > canal-device/relay-evidence.json
+python3 - <<'PY_RELAY_EVIDENCE'
+import json
+with open('canal-device/relay-evidence.json') as f:
+    e=json.load(f)
+assert e['sent_real_messages']==0
+assert e['compile_real_output_enabled'] is False
+assert e['reopened_dedup'] is True
+assert e['fake_headers']==1 and e['fake_forwards']==1
+print('PASS Fake TDLib + SQLite Android; sent_real_messages=0')
+PY_RELAY_EVIDENCE
 grep -q 'OK (' canal-device/instrumentation.txt
 ! grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|Process crashed' canal-device/instrumentation.txt
 adb exec-out run-as mx.charly.canal cat files/canaldeck-demo.png > canal-device/demo.png

@@ -120,7 +120,7 @@ class CanalActivity : Screen() {
         },LinearLayout.LayoutParams(0,-2,1f))};root.addView(n)
     }
     private fun home(){
-        page("home","CanalDeck","Tu Telegram, organizado a tu manera · beta 0.2")
+        page("home","CanalDeck","Tu Telegram, organizado a tu manera · beta 0.4")
         card("Tus canales, sin perder lo nuevo","Cliente propio con TDLib. Una cuenta real, carpetas locales, favoritos, lectura de canales y mensajes de texto. No es la aplicación Nicegram ni una app oficial de Telegram.")
         statusLabel=label(TelegramSession.current?.let{if(it.ready)"${it.accountName} · ${it.network}" else it.status} ?: "Sin sesión iniciada",15f,accent)
         button(if(TelegramSession.current?.ready==true)"Abrir mis conversaciones" else "Empezar · conectar mi cuenta",true){demo=false;if(TelegramSession.current?.ready==true)chats()else connect()}
@@ -297,6 +297,12 @@ class CanalActivity : Screen() {
                     ConnectionService.current?.clear(id)
                     toast("Avisos de picks desactivados")
                 } else {
+                    val account = TelegramSession.current?.accountId ?: 0L
+                    if (mode == PickWatchMode.RESELLER && (account <= 0L ||
+                            RelayPreferences(this, account).sourcePolicy(id)?.reseller != true)) {
+                        toast("Asigna primero esta conversación a su familia UnicoRey en Puente Pick$. Mazdita se configura por separado.")
+                        return@setSingleChoiceItems
+                    }
                     confirm("Activar SOLO avisos locales",
                         "Usa la conversación seleccionada, no su título. " +
                         "Canal directo avisa publicaciones nuevas; grupo de reventa solo identifica " +
@@ -324,6 +330,7 @@ class CanalActivity : Screen() {
             button("Guardar horario"){if(org.hours(start.text.toString(),end.text.toString()))toast("Horario guardado")else toast("Usa HH:mm válido y horas diferentes")}
             button("Cargar también conversaciones archivadas"){s.refresh(1000,true);toast("Se solicitó el archivo. Revisa Chats.")}
             button("Borrar los avisos actuales de CanalDeck"){ConnectionService.current?.clearAll()}
+            button("Preparar puente a Pick$ · salida OFF"){startActivity(Intent(this,RelaySettingsActivity::class.java))}
         }
         button("Permisos y notificaciones de Android"){try{startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName))}catch(_:Exception){toast("Revisa CanalDeck en Ajustes de Android")}}
         label("Para activar un canal: mantén pulsado el chat → Configurar avisos o Avisos de picks · Canal/Tipster. Todos empiezan apagados. Los avisos de picks son locales: no reenvían a Pick$.",13f,soft)
@@ -331,7 +338,7 @@ class CanalActivity : Screen() {
         if(s!=null){button("Desconectar CanalDeck"){stopService(Intent(this,ConnectionService::class.java));home()};button("Cerrar únicamente esta sesión"){confirm("Cerrar sesión","Cierra CanalDeck en Telegram; no cierra Telegram oficial ni Nicegram. Tus carpetas locales siguen separadas por cuenta."){drafts.clear();ConnectionService.current?.clearAll();s.logout();home()}}}
         else button("Conectar mi cuenta",true){demo=false;connect()}
         button("Ayuda de activación"){guide()}
-        button("Licencias y alcance"){dialog().setTitle("CanalDeck 0.2 beta").setMessage("Cliente independiente, no afiliado a Nicegram ni Telegram. TDLib: Boost 1.0. TDL Coroutines y Kotlin Coroutines: Apache 2.0. Licencias incluidas en assets. Una cuenta. Sin llamadas, chats secretos, exportación de contenido protegido ni pagos. La beta usa firma de prueba y no ha validado tu cuenta real.").setPositiveButton("Cerrar",null).show()}
+        button("Licencias y alcance"){dialog().setTitle("CanalDeck 0.4 beta").setMessage("Cliente independiente, no afiliado a Nicegram ni Telegram. TDLib: Boost 1.0. TDL Coroutines y Kotlin Coroutines: Apache 2.0. Licencias incluidas en assets. Una cuenta. Sin llamadas, chats secretos, exportación de contenido protegido ni pagos. El puente a Pick$ permanece OFF. La beta usa firma de prueba y no ha validado tu cuenta real.").setPositiveButton("Cerrar",null).show()}
         nav()
     }
     private fun openChat(id:Long){
@@ -430,6 +437,7 @@ class CanalActivity : Screen() {
         val s = TelegramSession.current ?: return
         val source = s.chats[m.chatId] ?: return
         val mode = org.pickMode(m.chatId)
+        val policy = RelayPreferences(this, s.accountId).sourcePolicy(m.chatId)
         val plain = when (val content = m.content) {
             is MessageText -> content.text.text
             is MessagePhoto -> content.caption.text
@@ -437,7 +445,7 @@ class CanalActivity : Screen() {
         }
         val item = PickBridgeRules.candidate(
             mode, source.title, plain, m.date.toLong(),
-            m.content is MessagePhoto, m.isOutgoing, m.editDate > 0
+            m.content is MessagePhoto, m.isOutgoing, m.editDate > 0, sourcePolicy = policy
         )
         if (item == null) {
             toast("No hay atribución válida de tipster o no es publicación nueva")
@@ -465,6 +473,7 @@ class CanalActivity : Screen() {
     }
     private fun playMedia(m:Message){
         if(m.selfDestructType!=null){toast("El contenido de autodestrucción no está implementado en esta beta");return}
+        if(TelegramSession.current?.chats?.get(m.chatId)?.hasProtectedContent==true){toast("Este chat protege sus medios. CanalDeck no los descarga ni los copia.");return}
         val c=m.content
         val file=when(c){is MessagePhoto->c.photo.sizes.lastOrNull()?.photo;is MessageVideo->c.video.video;is MessageAudio->c.audio.audio;is MessageVoiceNote->c.voiceNote.voice;else->null}?:return
         val cap=if(c is MessageVideo)80_000_000L else 20_000_000L
@@ -472,7 +481,7 @@ class CanalActivity : Screen() {
         val id=activeChat;val s=TelegramSession.current?:return
         confirm("Descargar y abrir","Se descargará este archivo a la carpeta privada de CanalDeck. Límite: ${cap/1_000_000} MB. Puede consumir datos móviles."){
             toast("Descargando archivo…")
-            s.media(file.id,cap){path->if(!isDestroyed&&foreground&&TelegramSession.current===s&&activeChat==id){if(path==null)toast("La descarga no se completó o excede el límite")else displayMedia(path,c is MessagePhoto,c is MessageVideo)}}
+            s.media(m,file.id,cap){path->if(!isDestroyed&&foreground&&TelegramSession.current===s&&activeChat==id){if(path==null)toast("La descarga no se completó, está restringida o excede el límite")else displayMedia(path,c is MessagePhoto,c is MessageVideo)}}
         }
     }
     private fun displayMedia(path:String,photo:Boolean,video:Boolean){

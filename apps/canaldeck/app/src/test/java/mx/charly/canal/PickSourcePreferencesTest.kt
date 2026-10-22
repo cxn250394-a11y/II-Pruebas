@@ -2,6 +2,7 @@ package mx.charly.canal
 
 import android.content.Context
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -14,9 +15,10 @@ class PickSourcePreferencesTest {
     private val account = 990034L
     private val chat = -100123456L
 
-    @After fun cleanup() {
+    @Before @After fun cleanup() {
         context.getSharedPreferences("canaldeck-org-$account", Context.MODE_PRIVATE)
             .edit().clear().commit()
+        context.deleteDatabase(LocalPickDeliveryStore.FILE_NAME)
     }
 
     @Test fun offDefaultAndNoUninitializedReplays() {

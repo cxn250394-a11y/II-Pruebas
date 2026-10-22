@@ -1,6 +1,10 @@
-# CanalDeck 0.2 beta — cliente propio de Telegram
+# CanalDeck 0.4 beta — cliente propio de Telegram
 
 Cliente Android nativo con TDLib. No es Nicegram, no está afiliado a Telegram y no es el lector Centro de Alertas. Una cuenta real con identidad propia de aplicación. Código recuperado de `projects/canal` (PR #3) y aislado aquí; ningún otro producto se modifica.
+
+## Puente Pick$ v0.4
+
+Candidato offline con fusible compilado OFF y configuración de salida OFF. Incluye selección por cuenta/chat real, Fano y cuatro familias UnicoRey, planificador tipado, SQLite y Fake TDLib. No envía automáticamente a Pick$ en esta versión. [Contrato, cobertura y límites](docs/PICKS_BRIDGE_V04.md), [revisión del proveedor](docs/PROVIDER_REVIEW_V04.md) y [propuesta de activación para Torre](docs/ACTIVACION_PROPUESTA_V04.md).
 
 ## Funciones implementadas
 

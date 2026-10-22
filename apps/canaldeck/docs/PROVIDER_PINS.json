@@ -1,0 +1,46 @@
+{
+  "provider": "g000sha256/tdl-coroutines",
+  "tag": "14.0.0",
+  "files": [
+    {
+      "path": "function/ForwardMessages.kt",
+      "git_blob_sha": "d978d8ca672123bc74d006f6f3056f43b6e6895f"
+    },
+    {
+      "path": "function/SendMessage.kt",
+      "git_blob_sha": "cdd22b38195a71dd0f3167e80f76219046efc8a8"
+    },
+    {
+      "path": "dto/Message.kt",
+      "git_blob_sha": "cd26def4b78b6ef97a261e7a566f20739a784ad7"
+    },
+    {
+      "path": "dto/MessageProperties.kt",
+      "git_blob_sha": "92c48520393657bee3098f2064dfe105201be3b9"
+    },
+    {
+      "path": "dto/Chat.kt",
+      "git_blob_sha": "711dc9a9f22e8f50917c9b100fb3344b190f27e5"
+    },
+    {
+      "path": "dto/ChatPermissions.kt",
+      "git_blob_sha": "ef6a967040835099151f3aea817fc50656d1d3e4"
+    },
+    {
+      "path": "dto/ChatMemberStatusAdministrator.kt",
+      "git_blob_sha": "d0dd6694e4fd5616c42f435009ecf177105e4bba"
+    },
+    {
+      "path": "dto/ChatMemberStatusCreator.kt",
+      "git_blob_sha": "46bf42431133bdf476e165b032c462c8f990b4b0"
+    },
+    {
+      "path": "dto/Supergroup.kt",
+      "git_blob_sha": "86fa46fcaa29fc924b9d9a713f01bf3dfa415b61"
+    },
+    {
+      "path": "dto/MessageForwardInfo.kt",
+      "git_blob_sha": "e322205ebfb5af78a95048772d19fb31ee2c4a12"
+    }
+  ]
+}

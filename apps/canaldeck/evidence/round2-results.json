@@ -1,0 +1,13 @@
+{
+  "scope": "OFFLINE_SYNTHETIC_AUTHOR_QA_NOT_RATIFICATION",
+  "request_commit": "8004c2a",
+  "baseline_commit": "a102eb8433c227291b3ef1c9e2972456cc443871",
+  "baseline_local_notice": {"tests": 2, "failures": 2, "expected_failure": true, "log": "round2-baseline/local-notice-red.log"},
+  "baseline_rules_with_regressions": {"tests": 21, "failures": 4, "expected_failure": true, "log": "round2-baseline/core-junit-red.log"},
+  "corrected_local_gradle": {"tests": 192, "failures": 0, "errors": 0, "skipped": 0, "lint": "PASS", "debug_apk": "BUILT", "android_test_apk": "BUILT"},
+  "shared_link_corpus": {"cases": 80, "accepted": 11, "rejected": 69, "sha256": "09d5d1a307870f12d7700cf0e3afdedec0db0d57bc95475c3e4bad898a37f77d"},
+  "real_relay_compiled_enabled": false,
+  "android_instrumentation": "Must be verified separately from the final GitHub Actions HEAD; local compilation is not device execution.",
+  "github_ci": "Final commit, run, JUnit and emulator artifacts will be linked in the Draft PR description after execution.",
+  "pending": ["Independent delta audit and Tower ratification", "POCO/HyperOS physical validation", "Live album cardinality and final asynchronous ACK integration", "Separate explicit owner authorization for any activation"]
+}
