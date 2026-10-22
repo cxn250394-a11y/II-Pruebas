@@ -43,36 +43,94 @@ class ConnectionService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int { if(intent?.action=="stop") stopSelf(); return START_NOT_STICKY }
     private fun notice(m: Message) {
         val s = session ?: return
-        if (!s.ready || s.accountId == 0L || m.sendingState != null) return
-        val org = Organization(this,s.accountId)
-        val cal = Calendar.getInstance(); val now = cal.get(Calendar.HOUR_OF_DAY)*60+cal.get(Calendar.MINUTE)
+        if (!s.ready || s.accountId == 0L || m.sendingState != null || m.isOutgoing) return
+        val org = Organization(this, s.accountId)
+        val cal = Calendar.getInstance()
+        val now = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        val quiet = org.quietEnabled && DeckRules.quiet(now, org.quietStart(), org.quietEnd())
         val raw = TelegramSession.preview(m.content)
-        val quiet = org.quietEnabled && DeckRules.quiet(now,org.quietStart(),org.quietEnd())
-        if (!DeckRules.shouldNotify(org.mode(m.chatId),raw,org.words(m.chatId),m.isOutgoing,s.visibleChat==m.chatId,quiet)) return
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
-        if (!manager.areNotificationsEnabled() || !seen.accept(m.chatId,m.id)) return
+        val chat = s.chats[m.chatId]
+        val mode = org.pickMode(m.chatId)
+        if (mode != PickWatchMode.OFF) {
+            if (quiet) return
+            // A delayed sync after reconnect must not announce an old pick as new.
+            val secondsOld = System.currentTimeMillis() / 1000L - m.date.toLong()
+            if (secondsOld !in 0L..(4L * 3600L)) return
+            val plain = when (val c = m.content) {
+                is dev.g000sha256.tdl.dto.MessageText -> c.text.text
+                is dev.g000sha256.tdl.dto.MessagePhoto -> c.caption.text
+                else -> ""
+            }
+            val candidate = PickBridgeRules.candidate(
+                mode, chat?.title.orEmpty(), plain, m.date.toLong(),
+                m.content is dev.g000sha256.tdl.dto.MessagePhoto, m.isOutgoing,
+                m.editDate > 0
+            ) ?: return
+            // TDLib's official link API is fail-closed for messages without a link.
+            s.messageLink(m) { link ->
+                if (s === session && s.ready && !s.closing &&
+                    org.pickMode(m.chatId) == mode &&
+                    org.acceptPick(m.chatId, m.id, m.date.toLong(), m.mediaAlbumId)) {
+                    publishNotice(m, candidate.render(link), candidate.firstLine)
+                }
+            }
+            return
+        }
+        if (!DeckRules.shouldNotify(org.mode(m.chatId), raw, org.words(m.chatId),
+            m.isOutgoing, s.visibleChat == m.chatId, quiet)) return
+        publishNotice(m, raw, null)
+    }
+
+    private fun publishNotice(m: Message, raw: String, pickTitle: String?) {
+        val s = session ?: return
+        if (!s.ready || s.accountId == 0L || m.sendingState != null) return
+        val org = Organization(this, s.accountId)
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        if (!manager.areNotificationsEnabled()) return
+        // Group a media album as one pick candidate; preserve per-message dedup elsewhere.
+        val messageIdentity = if (pickTitle != null && m.mediaAlbumId != 0L) m.mediaAlbumId else m.id
+        if (!seen.accept(m.chatId, messageIdentity)) return
         val chat = s.chats[m.chatId]
         if (chat != null && m.id <= chat.lastReadInboxMessageId) return
         val channelId = channel(m.chatId)
-        manager.createNotificationChannel(NotificationChannel(channelId,chat?.title?.take(80) ?: "Conversación ${m.chatId}",NotificationManager.IMPORTANCE_HIGH))
-        val title = chat?.title ?: "Nueva publicación"
+        manager.createNotificationChannel(NotificationChannel(channelId,
+            chat?.title?.take(80) ?: "Conversación " + m.chatId, NotificationManager.IMPORTANCE_HIGH))
+        val title = pickTitle ?: chat?.title ?: "Nueva publicación"
         val privateContent = chat?.hasProtectedContent == true || m.selfDestructType != null
-        val preview = if(org.previews && !privateContent) raw.take(220) else "Mensaje nuevo · abrir CanalDeck"
-        val recent = lines.getOrPut(m.chatId){mutableListOf()};recent.add(preview);while(recent.size>5)recent.removeAt(0)
-        while(lines.size>30){val id=lines.keys.first();lines.remove(id);manager.cancel(id.toString(),2000)}
-        val open = Intent(this,CanalActivity::class.java).setData(Uri.parse("canaldeck://chat/${m.chatId}"))
-            .putExtra("chat",m.chatId).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        val pending = PendingIntent.getActivity(this,0,open,PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val preview = if (pickTitle != null) raw.take(400)
+                      else if (org.previews && !privateContent) raw.take(220)
+                      else "Mensaje nuevo · abrir CanalDeck"
+        val recent = lines.getOrPut(m.chatId) { mutableListOf() }
+        recent.add(preview)
+        while (recent.size > 5) recent.removeAt(0)
+        while (lines.size > 30) {
+            val id = lines.keys.first()
+            lines.remove(id)
+            manager.cancel(id.toString(), 2000)
+        }
+        val open = Intent(this, CanalActivity::class.java)
+            .setData(Uri.parse("canaldeck://chat/" + m.chatId))
+            .putExtra("chat", m.chatId)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val pending = PendingIntent.getActivity(this, 0, open,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val style = Notification.InboxStyle().setBigContentTitle(title)
-        recent.asReversed().forEach{style.addLine(it)}
-        val time=System.currentTimeMillis()
-        manager.notify(m.chatId.toString(),2000,Notification.Builder(this,channelId).setSmallIcon(mx.charly.ui.R.drawable.ic_suite)
-            .setContentTitle(title).setContentText(preview).setStyle(style).setWhen(time).setShowWhen(true)
-            .setSortKey((Long.MAX_VALUE-time).toString().padStart(19,'0')).setGroup("canaldeck-messages")
-            .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN).setContentIntent(pending).setAutoCancel(true)
-            .setVisibility(Notification.VISIBILITY_PRIVATE).build())
+        recent.asReversed().forEach { style.addLine(it) }
+        val time = System.currentTimeMillis()
+        manager.notify(m.chatId.toString(), 2000,
+            Notification.Builder(this, channelId)
+                .setSmallIcon(mx.charly.ui.R.drawable.ic_suite)
+                .setContentTitle(title).setContentText(preview).setStyle(style)
+                .setWhen(time).setShowWhen(true)
+                .setSortKey((Long.MAX_VALUE - time).toString().padStart(19, '0'))
+                .setGroup("canaldeck-messages")
+                .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
+                .setContentIntent(pending).setAutoCancel(true)
+                .setVisibility(Notification.VISIBILITY_PRIVATE).build())
         summary()
     }
+
     private fun summary() {
         if(lines.isEmpty()){manager.cancel(2);return}
         manager.notify(2,Notification.Builder(this,"connection").setSmallIcon(mx.charly.ui.R.drawable.ic_suite)

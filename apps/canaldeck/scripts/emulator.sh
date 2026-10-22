@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 mkdir -p canal-device
-adb install -r canal-apk/CanalDeck-v0.2-beta.apk
+# The produced APK filename changes across beta versions: install exactly one signed
+# artifact and verify it against the checksum produced by the build job.
+shopt -s nullglob
+apk_files=(canal-apk/CanalDeck-v*-beta.apk)
+if [[ ${#apk_files[@]} -ne 1 ]]; then
+  echo "Expected exactly one CanalDeck beta APK; found ${#apk_files[@]}" >&2
+  exit 1
+fi
+( cd canal-apk && sha256sum --check SHA256SUMS.txt )
+adb install -r "${apk_files[0]}"
 adb install -r canal-apk/tests.apk
 adb logcat -c
 adb shell am instrument -w mx.charly.canal.test/androidx.test.runner.AndroidJUnitRunner | tee canal-device/instrumentation.txt

@@ -258,10 +258,11 @@ class CanalActivity : Screen() {
     private fun organize(id:Long){
         if(TelegramSession.current?.ready!=true)return
         dialog().setTitle(TelegramSession.current?.chats?.get(id)?.title ?: "Organizar")
-            .setItems(arrayOf(if(org.favorite(id))"Quitar favorito"else"Marcar favorito","Mover a carpeta","Configurar avisos de este chat")){_,i->when(i){
+            .setItems(arrayOf(if(org.favorite(id))"Quitar favorito"else"Marcar favorito","Mover a carpeta","Configurar avisos de este chat","Avisos de picks · Canal/Tipster")){_,i->when(i){
                 0->{org.toggleFavorite(id);refreshChats()}
                 1->{val fs=listOf("" to "Sin carpeta")+org.folders();dialog().setTitle("Carpeta local").setItems(fs.map{it.second}.toTypedArray()){_,n->org.assign(id,fs[n].first);refreshChats()}.setNegativeButton("Cancelar",null).show()}
-                else->noticeSettings(id)
+                2->noticeSettings(id)
+                else->pickSettings(id)
             }}.show()
     }
     private fun noticeSettings(id:Long){
@@ -281,6 +282,35 @@ class CanalActivity : Screen() {
                 try{startActivity(i)}catch(_:Exception){toast("El canal de Android aparece después de su primer aviso")}
             }.show()
     }
+    private fun pickSettings(id: Long) {
+        val modes = arrayOf(
+            "Desactivado (predeterminado)",
+            "Canal directo · Fano Futbol y otros",
+            "Grupo de reventa · 12 tipsters UnicoRey"
+        )
+        dialog().setTitle("Mis avisos de picks · solo CanalDeck")
+            .setSingleChoiceItems(modes, org.pickMode(id).ordinal) { d, choice ->
+                d.dismiss()
+                val mode = PickWatchMode.entries[choice]
+                if (mode == PickWatchMode.OFF) {
+                    org.pickMode(id, mode, TelegramSession.current?.chats?.get(id)?.lastMessage?.id ?: 0L)
+                    ConnectionService.current?.clear(id)
+                    toast("Avisos de picks desactivados")
+                } else {
+                    confirm("Activar SOLO avisos locales",
+                        "Usa la conversación seleccionada, no su título. " +
+                        "Canal directo avisa publicaciones nuevas; grupo de reventa solo identifica " +
+                        "los 12 nombres si están expresamente atribuidos. " +
+                        "No reenvía a Pick$, no descarga imágenes y no activa Ferrari.") {
+                        org.pickMode(id, mode, TelegramSession.current?.chats?.get(id)?.lastMessage?.id ?: 0L)
+                        ConnectionService.current?.clear(id)
+                        if (Build.VERSION.SDK_INT >= 33)
+                            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 9)
+                        toast("Modo guardado. Mensajes nuevos solamente.")
+                    }
+                }
+            }.setNegativeButton("Cancelar", null).show()
+    }
     private fun settings(){
         page("settings","Ajustes","Tu sesión y tu privacidad")
         val s=TelegramSession.current
@@ -296,7 +326,7 @@ class CanalActivity : Screen() {
             button("Borrar los avisos actuales de CanalDeck"){ConnectionService.current?.clearAll()}
         }
         button("Permisos y notificaciones de Android"){try{startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName))}catch(_:Exception){toast("Revisa CanalDeck en Ajustes de Android")}}
-        label("Para activar un canal: mantén pulsado el chat → Configurar avisos. Todos empiezan apagados. La vista previa está oculta de fábrica.",13f,soft)
+        label("Para activar un canal: mantén pulsado el chat → Configurar avisos o Avisos de picks · Canal/Tipster. Todos empiezan apagados. Los avisos de picks son locales: no reenvían a Pick$.",13f,soft)
         card("Conexión visible, no garantía de entrega instantánea","No hay Firebase/FCM configurado. Esta beta usa una conexión visible en segundo plano; HyperOS puede cerrarla o retrasarla. No reemplaza todavía las alertas del cliente oficial.")
         if(s!=null){button("Desconectar CanalDeck"){stopService(Intent(this,ConnectionService::class.java));home()};button("Cerrar únicamente esta sesión"){confirm("Cerrar sesión","Cierra CanalDeck en Telegram; no cierra Telegram oficial ni Nicegram. Tus carpetas locales siguen separadas por cuenta."){drafts.clear();ConnectionService.current?.clearAll();s.logout();home()}}}
         else button("Conectar mi cuenta",true){demo=false;connect()}
@@ -382,6 +412,7 @@ class CanalActivity : Screen() {
     private fun messageActions(m:Message){
         val actions=mutableListOf("Ver texto completo")
         if(composer!=null)actions.add("Responder con texto")
+        if (org.pickMode(activeChat) != PickWatchMode.OFF) actions.add("Compartir referencia Pick$")
         if(m.content is MessagePhoto)actions.add("Ver foto")
         if(m.content is MessageVideo)actions.add("Reproducir video")
         if(m.content is MessageAudio || m.content is MessageVoiceNote)actions.add("Reproducir audio")
@@ -391,8 +422,46 @@ class CanalActivity : Screen() {
             "Ver texto completo"->{val t=text(TelegramSession.preview(m.content),15f).apply{setPadding(dp(18),dp(12),dp(18),dp(12))};dialog().setView(ScrollView(this).apply{addView(t)}).setPositiveButton("Cerrar",null).show()}
             "Responder con texto"->{reply=m;replyLabel?.text="Respuesta: ${TelegramSession.preview(m.content).take(80)} · tocar para quitar";composer?.requestFocus()}
             "Abrir enlace"->dialog().setTitle("Enlace externo").setItems(links.toTypedArray()){_,i->confirm("Abrir navegador",links[i]){website(links[i])}}.show()
+            "Compartir referencia Pick$"->sharePickReference(m)
             else->playMedia(m)
         }}.show()
+    }
+    private fun sharePickReference(m: Message) {
+        val s = TelegramSession.current ?: return
+        val source = s.chats[m.chatId] ?: return
+        val mode = org.pickMode(m.chatId)
+        val plain = when (val content = m.content) {
+            is MessageText -> content.text.text
+            is MessagePhoto -> content.caption.text
+            else -> ""
+        }
+        val item = PickBridgeRules.candidate(
+            mode, source.title, plain, m.date.toLong(),
+            m.content is MessagePhoto, m.isOutgoing, m.editDate > 0
+        )
+        if (item == null) {
+            toast("No hay atribución válida de tipster o no es publicación nueva")
+            return
+        }
+        s.messageLink(m) { link ->
+            if (isDestroyed || !foreground || TelegramSession.current !== s || activeChat != m.chatId)
+                return@messageLink
+            val message = item.render(link)
+            dialog().setTitle("Compartir referencia · revisión manual")
+                .setMessage(message + "\n\nSe comparte SOLO la referencia, no la imagen ni contenido protegido. " +
+                    "Tú eliges el destino y confirmas el envío. No se activa ningún bot.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Compartir") { _, _ ->
+                    try {
+                        val intent = Intent(Intent.ACTION_SEND)
+                            .setType("text/plain")
+                            .putExtra(Intent.EXTRA_TEXT, message)
+                        startActivity(Intent.createChooser(intent, "Compartir referencia de pick"))
+                    } catch (_: Exception) {
+                        toast("No hay una aplicación disponible para compartir")
+                    }
+                }.show()
+        }
     }
     private fun playMedia(m:Message){
         if(m.selfDestructType!=null){toast("El contenido de autodestrucción no está implementado en esta beta");return}
