@@ -58,14 +58,17 @@ object PickBridgeRules {
         } catch (_: Exception) { "No disponible" }
     }
 
-    /** Accept only links actually returned by TDLib. Never synthesize a t.me/c URL. */
+    /** Accept only a TDLib-provided HTTPS Telegram MESSAGE permalink. Never synthesize URLs. */
     fun validTelegramLink(link: String?): String? {
-        if (link.isNullOrBlank() || link.any { it.isISOControl() }) return null
+        if (link.isNullOrBlank() || link.length > 1024 || link.any { it.isISOControl() }) return null
         return try {
             val uri = URI(link)
+            val path = uri.rawPath.orEmpty()
+            val messagePath = Regex("^/c/[0-9]+/[0-9]+$").matches(path) ||
+                Regex("^/[A-Za-z0-9_]{5,32}/[0-9]+$").matches(path)
             if (uri.scheme != "https" || uri.userInfo != null || uri.port != -1 ||
-                uri.host?.lowercase(Locale.ROOT) !in setOf("t.me", "telegram.me") ||
-                uri.rawPath.isNullOrBlank() || uri.rawPath == "/"
+                uri.fragment != null || uri.host?.lowercase(Locale.ROOT) !in setOf("t.me", "telegram.me") ||
+                !messagePath
             ) null else link
         } catch (_: Exception) { null }
     }
