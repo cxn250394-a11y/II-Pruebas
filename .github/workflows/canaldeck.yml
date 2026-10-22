@@ -43,6 +43,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.6.1'
+      - name: Privacy and isolation checks
+        run: python3 scripts/check-source.py
       - name: Tests, lint, APK and instrumentation test package
         run: |
           set -o pipefail

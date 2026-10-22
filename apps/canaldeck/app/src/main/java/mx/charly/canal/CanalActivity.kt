@@ -81,7 +81,8 @@ class CanalActivity : Screen() {
     override fun onBackPressed() { if(screen=="history")chats();else if(screen!="home")home();else super.onBackPressed() }
     private fun consumeIntent(i: Intent) {
         val id=i.getLongExtra("chat",0)
-        if(id!=0L && TelegramSession.current?.ready==true){i.removeExtra("chat");demo=false;openChat(id)}
+        val s=TelegramSession.current
+        if(id!=0L && s?.ready==true){i.removeExtra("chat");if(id in s.chats){demo=false;openChat(id)}else toast("Esta conversación todavía no está cargada")}
     }
     private fun observe() {
         val s=TelegramSession.current
@@ -101,7 +102,7 @@ class CanalActivity : Screen() {
         }
     }
     private fun secure() {
-        if(!demo&&(TelegramSession.current!=null||screen=="credentials"||screen=="login"))window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        if(screen=="credentials"||screen=="login"||(!demo&&TelegramSession.current!=null))window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
     private fun saveDraft(){val c=composer;if(screen=="history"&&c!=null)drafts[(TelegramSession.current?.accountId?:0) to activeChat]=c.text.toString()}
@@ -213,7 +214,7 @@ class CanalActivity : Screen() {
         chatsList=ListView(this).apply{divider=null;dividerHeight=dp(8);adapter=chatAdapter;clipToPadding=false}
         body.addView(chatsList,LinearLayout.LayoutParams(-1,0,1f))
         val actions=row()
-        actions.addView(Button(this).apply{text="Ordenar";isAllCaps=false;setOnClickListener{AlertDialog.Builder(this@CanalActivity).setTitle("Orden de conversaciones").setSingleChoiceItems(arrayOf("Favoritos y recientes","Nombre","Más no leídos"),sort){d,n->sort=n;d.dismiss();refreshChats()}.show()}},LinearLayout.LayoutParams(0,-2,1f))
+        actions.addView(Button(this).apply{text="Ordenar";isAllCaps=false;setOnClickListener{dialog().setTitle("Orden de conversaciones").setSingleChoiceItems(arrayOf("Favoritos y recientes","Nombre","Más no leídos"),sort){d,n->sort=n;d.dismiss();refreshChats()}.show()}},LinearLayout.LayoutParams(0,-2,1f))
         actions.addView(Button(this).apply{text=if(demo)"Salir del demo" else "Cargar más";isAllCaps=false;setOnClickListener{if(demo){demo=false;home()}else{limit=(limit+200).coerceAtMost(1000);TelegramSession.current?.refresh(limit);toast("Solicitada carga de hasta $limit conversaciones")}}},LinearLayout.LayoutParams(0,-2,1f))
         body.addView(actions);nav();refreshChats()
     }
@@ -247,7 +248,7 @@ class CanalActivity : Screen() {
         org.folders().forEach{(id,name)->
             val count=TelegramSession.current?.chats?.keys?.count{org.folder(it)==id}?:0
             card(name,"$count conversaciones cargadas"){folder=id;kind="all";chats()}
-            button("Editar «$name»"){AlertDialog.Builder(this).setItems(arrayOf("Cambiar nombre","Eliminar carpeta")){_,choice->
+            button("Editar «$name»"){dialog().setItems(arrayOf("Cambiar nombre","Eliminar carpeta")){_,choice->
                 if(choice==0)prompt("Nuevo nombre"){n->if(org.renameFolder(id,n))folders()else toast("Nombre duplicado o inválido")}
                 else confirm("Eliminar carpeta","Solo elimina esta carpeta local; no borra chats, mensajes ni favoritos."){org.deleteFolder(id);if(folder==id)folder="*";folders()}
             }.show()}
@@ -256,10 +257,10 @@ class CanalActivity : Screen() {
     }
     private fun organize(id:Long){
         if(TelegramSession.current?.ready!=true)return
-        AlertDialog.Builder(this).setTitle(TelegramSession.current?.chats?.get(id)?.title ?: "Organizar")
+        dialog().setTitle(TelegramSession.current?.chats?.get(id)?.title ?: "Organizar")
             .setItems(arrayOf(if(org.favorite(id))"Quitar favorito"else"Marcar favorito","Mover a carpeta","Configurar avisos de este chat")){_,i->when(i){
                 0->{org.toggleFavorite(id);refreshChats()}
-                1->{val fs=listOf("" to "Sin carpeta")+org.folders();AlertDialog.Builder(this).setTitle("Carpeta local").setItems(fs.map{it.second}.toTypedArray()){_,n->org.assign(id,fs[n].first);refreshChats()}.setNegativeButton("Cancelar",null).show()}
+                1->{val fs=listOf("" to "Sin carpeta")+org.folders();dialog().setTitle("Carpeta local").setItems(fs.map{it.second}.toTypedArray()){_,n->org.assign(id,fs[n].first);refreshChats()}.setNegativeButton("Cancelar",null).show()}
                 else->noticeSettings(id)
             }}.show()
     }
@@ -269,7 +270,7 @@ class CanalActivity : Screen() {
         names.forEachIndexed{i,s->choices.addView(RadioButton(this).apply{this.id=200+i;text=s;setTextColor(Color.WHITE)})};choices.check(200+org.mode(id).ordinal);box.addView(choices)
         val words=EditText(this).apply{hint="Palabras separadas por comas";setText(org.words(id));setTextColor(Color.WHITE);setHintTextColor(soft)};box.addView(words)
         box.addView(text("Son avisos de CanalDeck, separados de Telegram/Nicegram. Dependen de que esta conexión siga activa.",12f,soft))
-        AlertDialog.Builder(this).setTitle("Avisos de la conversación").setView(box).setNegativeButton("Cancelar",null)
+        dialog().setTitle("Avisos de la conversación").setView(box).setNegativeButton("Cancelar",null)
             .setPositiveButton("Guardar"){_,_->
                 val mode=NoticeMode.entries.getOrElse(choices.checkedRadioButtonId-200){NoticeMode.OFF}
                 org.mode(id,mode);org.words(id,words.text.toString());ConnectionService.current?.clear(id)
@@ -300,7 +301,7 @@ class CanalActivity : Screen() {
         if(s!=null){button("Desconectar CanalDeck"){stopService(Intent(this,ConnectionService::class.java));home()};button("Cerrar únicamente esta sesión"){confirm("Cerrar sesión","Cierra CanalDeck en Telegram; no cierra Telegram oficial ni Nicegram. Tus carpetas locales siguen separadas por cuenta."){drafts.clear();ConnectionService.current?.clearAll();s.logout();home()}}}
         else button("Conectar mi cuenta",true){demo=false;connect()}
         button("Ayuda de activación"){guide()}
-        button("Licencias y alcance"){AlertDialog.Builder(this).setTitle("CanalDeck 0.2 beta").setMessage("Cliente independiente, no afiliado a Nicegram ni Telegram. TDLib: Boost 1.0. TDL Coroutines y Kotlin Coroutines: Apache 2.0. Licencias incluidas en assets. Una cuenta. Sin llamadas, chats secretos, exportación de contenido protegido ni pagos. La beta usa firma de prueba y no ha validado tu cuenta real.").setPositiveButton("Cerrar",null).show()}
+        button("Licencias y alcance"){dialog().setTitle("CanalDeck 0.2 beta").setMessage("Cliente independiente, no afiliado a Nicegram ni Telegram. TDLib: Boost 1.0. TDL Coroutines y Kotlin Coroutines: Apache 2.0. Licencias incluidas en assets. Una cuenta. Sin llamadas, chats secretos, exportación de contenido protegido ni pagos. La beta usa firma de prueba y no ha validado tu cuenta real.").setPositiveButton("Cerrar",null).show()}
         nav()
     }
     private fun openChat(id:Long){
@@ -326,7 +327,7 @@ class CanalActivity : Screen() {
         val isChannel=(chat?.type as? ChatTypeSupergroup)?.isChannel==true
         if(isChannel||chat?.viewAsTopics==true){label(if(isChannel)"Canal de lectura · publicación administrativa no implementada"else"Los foros con temas se consultan, pero no se envía desde esta vista",12f,soft)}
         else{
-            composer=EditText(this).apply{hint="Escribe un mensaje";setTextColor(Color.WHITE);setHintTextColor(soft);minLines=1;maxLines=4;isSingleLine=false;inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;isSaveEnabled=false;setText(drafts[(TelegramSession.current?.accountId?:0) to activeChat].orEmpty())}
+            composer=EditText(this).apply{hint="Escribe un mensaje";setTextColor(Color.WHITE);setHintTextColor(soft);minLines=1;maxLines=4;isSingleLine=false;inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;isSaveEnabled=false;filters=arrayOf(android.text.InputFilter.LengthFilter(4096));setText(drafts[(TelegramSession.current?.accountId?:0) to activeChat].orEmpty())}
             body.addView(composer)
             sendButton=button("Enviar texto",true){send()}
         }
@@ -386,10 +387,10 @@ class CanalActivity : Screen() {
         if(m.content is MessageAudio || m.content is MessageVoiceNote)actions.add("Reproducir audio")
         val links=Regex("https?://[^\\s<>]+",RegexOption.IGNORE_CASE).findAll(TelegramSession.preview(m.content)).map{it.value}.take(5).toList()
         if(links.isNotEmpty())actions.add("Abrir enlace")
-        AlertDialog.Builder(this).setTitle("Mensaje").setItems(actions.toTypedArray()){_,n->when(actions[n]){
-            "Ver texto completo"->{val t=text(TelegramSession.preview(m.content),15f).apply{setPadding(dp(18),dp(12),dp(18),dp(12))};AlertDialog.Builder(this).setView(ScrollView(this).apply{addView(t)}).setPositiveButton("Cerrar",null).show()}
+        dialog().setTitle("Mensaje").setItems(actions.toTypedArray()){_,n->when(actions[n]){
+            "Ver texto completo"->{val t=text(TelegramSession.preview(m.content),15f).apply{setPadding(dp(18),dp(12),dp(18),dp(12))};dialog().setView(ScrollView(this).apply{addView(t)}).setPositiveButton("Cerrar",null).show()}
             "Responder con texto"->{reply=m;replyLabel?.text="Respuesta: ${TelegramSession.preview(m.content).take(80)} · tocar para quitar";composer?.requestFocus()}
-            "Abrir enlace"->AlertDialog.Builder(this).setTitle("Enlace externo").setItems(links.toTypedArray()){_,i->confirm("Abrir navegador",links[i]){website(links[i])}}.show()
+            "Abrir enlace"->dialog().setTitle("Enlace externo").setItems(links.toTypedArray()){_,i->confirm("Abrir navegador",links[i]){website(links[i])}}.show()
             else->playMedia(m)
         }}.show()
     }
@@ -411,14 +412,14 @@ class CanalActivity : Screen() {
             mediaDialog?.dismiss()
             if(photo){val opt=android.graphics.BitmapFactory.Options().apply{inJustDecodeBounds=true};android.graphics.BitmapFactory.decodeFile(path,opt);require(opt.outWidth>0&&opt.outHeight>0);var sample=1;while(opt.outWidth/sample>1600||opt.outHeight/sample>1600)sample*=2;opt.inJustDecodeBounds=false;opt.inSampleSize=sample
                 val bmp=android.graphics.BitmapFactory.decodeFile(path,opt)?:error("Invalid photo");val image=ImageView(this).apply{adjustViewBounds=true;setImageBitmap(bmp)}
-                mediaDialog=AlertDialog.Builder(this).setView(image).setPositiveButton("Cerrar",null).create()
+                mediaDialog=dialog().setView(image).setPositiveButton("Cerrar",null).create()
             }else if(video){val v=VideoView(this);val control=MediaController(this);v.setMediaController(control);v.setVideoURI(Uri.fromFile(f));v.setOnPreparedListener{v.start()};v.setOnErrorListener{_,_,_->toast("El teléfono no pudo reproducir este formato");true}
-                mediaDialog=AlertDialog.Builder(this).setView(v).setPositiveButton("Cerrar",null).create();mediaDialog?.setOnDismissListener{v.stopPlayback()}
+                mediaDialog=dialog().setView(v).setPositiveButton("Cerrar",null).create();mediaDialog?.setOnDismissListener{v.stopPlayback()}
             }else{val box=column();val toggle=Button(this).apply{text="Pausar / continuar";setOnClickListener{mediaPlayer?.let{if(it.isPlaying)it.pause()else it.start()}}};box.addView(toggle)
                 mediaPlayer=MediaPlayer().apply{setDataSource(path);setOnPreparedListener{it.start()};setOnErrorListener{_,_,_->toast("Audio no compatible");true};prepareAsync()}
-                mediaDialog=AlertDialog.Builder(this).setTitle("Audio de Telegram").setView(box).setPositiveButton("Cerrar",null).create();mediaDialog?.setOnDismissListener{mediaPlayer?.release();mediaPlayer=null}
+                mediaDialog=dialog().setTitle("Audio de Telegram").setView(box).setPositiveButton("Cerrar",null).create();mediaDialog?.setOnDismissListener{mediaPlayer?.release();mediaPlayer=null}
             }
-            mediaDialog?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE);mediaDialog?.show()
+            mediaDialog?.show()
         }catch(_:Exception){mediaPlayer?.release();mediaPlayer=null;toast("No se pudo abrir el contenido de forma segura")}
     }
 }

@@ -13,16 +13,17 @@ import android.os.Bundle
 import android.text.InputType
 import android.view.View
 import android.view.WindowInsets
+import android.view.WindowManager
 import android.widget.*
 
-/** Small shared UI; each product has its own private data and Android package. */
+/** UI components scoped to CanalDeck. Dialogs are protected independently of the activity window. */
 open class Screen : Activity() {
     protected val ink = Color.rgb(12,20,32)
     protected val accent = Color.rgb(95,226,187)
     protected val soft = Color.rgb(180,194,213)
     protected lateinit var root: LinearLayout
     protected lateinit var body: LinearLayout
-    override fun onCreate(state: Bundle?) { super.onCreate(state); layout("II Pruebas", "Aplicación independiente · alpha") }
+    override fun onCreate(state: Bundle?) { super.onCreate(state); layout("CanalDeck", "Cliente independiente · beta") }
     fun dp(v: Int) = (resources.displayMetrics.density*v+0.5f).toInt()
     protected fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     protected fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -55,18 +56,22 @@ open class Screen : Activity() {
     protected fun field(hintText: String, value: String="", password: Boolean=false, numeric: Boolean=false): EditText = EditText(this).apply{
         hint=hintText;setText(value);setTextColor(Color.WHITE);setHintTextColor(soft);setSingleLine(true)
         inputType=if(password) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD else if(numeric) InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED else InputType.TYPE_CLASS_TEXT
-        if(password){isSaveEnabled=false;importantForAutofill=View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS}
+        if(password){isSaveEnabled=false;importantForAutofill=View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS;window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)}
     }.also{body.addView(it)}
     protected fun menu(items:List<String>, selected:Int=0, action:(Int)->Unit):Spinner = Spinner(this).apply{
         adapter=ArrayAdapter(this@Screen,android.R.layout.simple_spinner_dropdown_item,items);setSelection(selected)
         onItemSelectedListener=object:AdapterView.OnItemSelectedListener{override fun onNothingSelected(p:AdapterView<*>?){};override fun onItemSelected(p:AdapterView<*>?,v:View?,pos:Int,id:Long){action(pos)}}
     }.also{body.addView(it)}
-    protected fun prompt(title:String,value:String="",action:(String)->Unit){
-        val e=EditText(this).apply{setText(value);setSingleLine(true)}
-        AlertDialog.Builder(this).setTitle(title).setView(e).setNegativeButton("Cancelar",null).setPositiveButton("Guardar"){_,_->action(e.text.toString())}.show()
+    protected fun dialog(): AlertDialog.Builder = object : AlertDialog.Builder(this) {
+        override fun create(): AlertDialog = super.create().apply { window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+        override fun show(): AlertDialog = create().also { it.show() }
     }
-    protected fun confirm(title:String,message:String,action:()->Unit){AlertDialog.Builder(this).setTitle(title).setMessage(message).setNegativeButton("Cancelar",null).setPositiveButton("Continuar"){_,_->action()}.show()}
-    protected fun info(title:String,message:String){AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("Cerrar",null).show()}
+    protected fun prompt(title:String,value:String="",action:(String)->Unit){
+        val e=EditText(this).apply{setText(value);setSingleLine(true);isSaveEnabled=false}
+        dialog().setTitle(title).setView(e).setNegativeButton("Cancelar",null).setPositiveButton("Guardar"){_,_->action(e.text.toString())}.show()
+    }
+    protected fun confirm(title:String,message:String,action:()->Unit){dialog().setTitle(title).setMessage(message).setNegativeButton("Cancelar",null).setPositiveButton("Continuar"){_,_->action()}.show()}
+    protected fun info(title:String,message:String){dialog().setTitle(title).setMessage(message).setPositiveButton("Cerrar",null).show()}
     protected fun toast(s:String){Toast.makeText(this,s,Toast.LENGTH_LONG).show()}
-    protected fun website(url:String){try{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}catch(_:Exception){toast("No hay navegador disponible")}}
+    protected fun website(url:String){try{val uri=Uri.parse(url);require(uri.scheme in setOf("http","https"));startActivity(Intent(Intent.ACTION_VIEW,uri))}catch(_:Exception){toast("No se pudo abrir el enlace en el navegador")}}
 }

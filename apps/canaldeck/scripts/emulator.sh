@@ -7,6 +7,7 @@ adb logcat -c
 adb shell am instrument -w mx.charly.canal.test/androidx.test.runner.AndroidJUnitRunner | tee canal-device/instrumentation.txt
 grep -q 'OK (' canal-device/instrumentation.txt
 ! grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|Process crashed' canal-device/instrumentation.txt
+adb exec-out run-as mx.charly.canal cat files/canaldeck-demo.png > canal-device/demo.png
 adb shell am start -W -n mx.charly.canal/.CanalActivity | tee canal-device/launch.txt
 sleep 2
 adb shell dumpsys activity activities > canal-device/activity.txt
