@@ -29,6 +29,12 @@ class Organization(context: Context, accountId: Long) {
     fun assign(chat: Long, folder: String) { if (folder.isBlank() || folder in set("folders")) p.edit().putString("chat-folder-$chat", folder).apply() }
     fun mode(chat: Long): NoticeMode = NoticeMode.entries.getOrElse(p.getInt("notice-$chat", 0)) { NoticeMode.OFF }
     fun mode(chat: Long, mode: NoticeMode) { p.edit().putInt("notice-$chat", mode.ordinal).apply() }
+    /** Owner-enabled per account and exact chat ID; never enable by a matching title. */
+    fun pickMode(chat: Long): PickWatchMode = PickWatchMode.entries
+        .getOrElse(p.getInt("pick-mode-$chat", 0)) { PickWatchMode.OFF }
+    fun pickMode(chat: Long, mode: PickWatchMode) {
+        p.edit().putInt("pick-mode-$chat", mode.ordinal).apply()
+    }
     fun words(chat: Long) = p.getString("words-$chat", "").orEmpty()
     fun words(chat: Long, value: String) { p.edit().putString("words-$chat", value.take(2400)).apply() }
     var previews: Boolean
