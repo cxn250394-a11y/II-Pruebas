@@ -7,6 +7,17 @@ code = root / "app/src/main/java/mx/charly/canal"
 gradle = (root / "build.gradle").read_text()
 fuses = re.findall(r"buildConfigField\s+'boolean',\s*'PICK_RELAY_REAL_ENABLED',\s*'([^']+)'", gradle)
 assert fuses == ["false"], "Real relay must be compiled OFF, not a Gradle/user override"
+assert "applicationId 'mx.charly.canal.offline'" in gradle
+assert "buildConfigField 'boolean', 'OFFLINE_REHEARSAL_ONLY', 'true'" in gradle
+session = (code / "TelegramSession.kt").read_text()
+assert session.index('check(!BuildConfig.OFFLINE_REHEARSAL_ONLY)') < session.index('TelegramSession(context.applicationContext)')
+manifest = (root / 'app/src/main/AndroidManifest.xml').read_text()
+assert 'android.permission.INTERNET' not in manifest
+for filename in ['AsyncRelayEngine.kt', 'FakeAsyncRelay.kt', 'AsyncOfflineDemo.kt', 'AsyncOfflineDemoActivity.kt']:
+    source = (code / filename).read_text()
+    assert 'dev.g000sha256' not in source and 'TelegramSession' not in source and 'TdlClient' not in source, filename
+mapper = (code / 'TdlAsyncAckMapper.kt').read_text()
+assert 'TdlClient' not in mapper and 'client.' not in mapper
 gate = (code / "RelayRealGate.kt").read_text()
 assert "BuildConfig.PICK_RELAY_REAL_ENABLED && userEnabled" in gate
 production = list(code.glob("*.kt"))

@@ -13,12 +13,14 @@ subprojects { p ->
         defaultConfig {
             minSdk 28
             if (p.name == 'app') {
-                applicationId 'mx.charly.canal'
+                // Isolated owner rehearsal: cannot replace the installed main app or its data.
+                applicationId 'mx.charly.canal.offline'
                 // Literal compiled fuse: no Gradle property, remote config or UI can open it.
                 buildConfigField 'boolean', 'PICK_RELAY_REAL_ENABLED', 'false'
+                buildConfigField 'boolean', 'OFFLINE_REHEARSAL_ONLY', 'true'
                 targetSdk 35
                 versionCode 4
-                versionName '0.4.0-beta'
+                versionName '0.4.1-offline-beta'
                 ndk { abiFilters 'arm64-v8a', 'x86_64' }
                 testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
             }

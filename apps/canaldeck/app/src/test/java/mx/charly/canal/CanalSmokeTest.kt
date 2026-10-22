@@ -20,7 +20,7 @@ class CanalSmokeTest {
     private fun click(a:CanalActivity,part:String){views(a.window.decorView).filterIsInstance<Button>().first{it.text.toString().contains(part)}.performClick()}
     @Test fun nativeWelcomeHasClearRealAndDemoChoices(){
         val c=Robolectric.buildActivity(CanalActivity::class.java).create()
-        try{val a=c.get();val all=views(a.window.decorView).filterIsInstance<TextView>().map{it.text.toString()};assertTrue(all.any{it.contains("conectar mi cuenta")});assertTrue(all.any{it.contains("sin iniciar sesión")});assertNull(TelegramSession.current)}finally{c.destroy()}
+        try{val a=c.get();val all=views(a.window.decorView).filterIsInstance<TextView>().map{it.text.toString()};if(BuildConfig.OFFLINE_REHEARSAL_ONLY){assertTrue(all.any{it=="Ensayo offline · sin cuenta"});assertFalse(all.any{it.contains("conectar mi cuenta")})}else assertTrue(all.any{it.contains("conectar mi cuenta")});assertTrue(all.any{it.contains("sin iniciar sesión")});assertNull(TelegramSession.current)}finally{c.destroy()}
     }
     @Test fun demoDoesNotStartSessionAndFiltersRealListWidget(){
         val c=Robolectric.buildActivity(CanalActivity::class.java).create()
@@ -30,9 +30,9 @@ class CanalSmokeTest {
         val c=Robolectric.buildActivity(CanalActivity::class.java).create()
         try{val a=c.get();click(a,"Ver diseño");views(a.window.decorView).filterIsInstance<EditText>().single().setText("musica");assertEquals(1,views(a.window.decorView).filterIsInstance<ListView>().single().adapter.count)}finally{c.destroy()}
     }
-    @Test fun credentialsScreenIsProtectedAndDoesNotStartSession(){
+    @Test fun credentialsAreHiddenInOfflineBuildOrProtectedInClientBuild(){
         val c=Robolectric.buildActivity(CanalActivity::class.java).create()
-        try{val a=c.get();click(a,"Identidad de aplicación");assertTrue(a.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0);assertEquals(2,views(a.window.decorView).filterIsInstance<EditText>().size);assertTrue(views(a.window.decorView).filterIsInstance<EditText>().all{!it.isSaveEnabled});assertNull(TelegramSession.current)}finally{c.destroy()}
+        try{val a=c.get();if(BuildConfig.OFFLINE_REHEARSAL_ONLY){assertFalse(views(a.window.decorView).filterIsInstance<Button>().any{it.text.toString().contains("Identidad de aplicación")});assertTrue(views(a.window.decorView).filterIsInstance<EditText>().isEmpty())}else{click(a,"Identidad de aplicación");assertTrue(a.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0);assertEquals(2,views(a.window.decorView).filterIsInstance<EditText>().size);assertTrue(views(a.window.decorView).filterIsInstance<EditText>().all{!it.isSaveEnabled})};assertNull(TelegramSession.current)}finally{c.destroy()}
     }
     @Test fun rejectsMissingIdentity(){assertFalse(Vault.validApi("",""));assertFalse(Vault.validApi("0","a".repeat(32)));assertFalse(Vault.validApi("42","z".repeat(32)));assertTrue(Vault.validApi("42","a".repeat(32)))}
     @Test @Config(sdk=[35]) fun android35Welcome(){val c=Robolectric.buildActivity(CanalActivity::class.java).create();try{assertNotNull(c.get().findViewById<View>(android.R.id.content))}finally{c.destroy()}}

@@ -12,7 +12,10 @@ import java.util.concurrent.CopyOnWriteArrayList
 class TelegramSession private constructor(private val context: Context) {
     companion object {
         @Volatile var current: TelegramSession? = null; private set
-        fun start(context: Context): TelegramSession = current ?: TelegramSession(context.applicationContext).also { current = it; it.begin() }
+        fun start(context: Context): TelegramSession {
+            check(!BuildConfig.OFFLINE_REHEARSAL_ONLY) { "OFFLINE_REHEARSAL_ONLY" }
+            return current ?: TelegramSession(context.applicationContext).also { current = it; it.begin() }
+        }
         fun preview(c: MessageContent?): String = when (c) {
             is MessageText -> c.text.text
             is MessagePhoto -> "▧ Foto · ${c.caption.text}"

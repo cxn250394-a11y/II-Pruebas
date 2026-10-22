@@ -1,4 +1,17 @@
-# CanalDeck 0.4 beta — cliente propio de Telegram
+# CanalDeck 0.4.1 — carril aislado de ensayo offline
+
+Este hijo de PR #8 conserva congelado el HEAD `3b32cb7`; tampoco cambia Info PR #33
+`e4a99e3`. El APK de este carril usa **`mx.charly.canal.offline`**, carece de permiso
+de Internet, bloquea la construcción de una sesión y conserva el fusible de salida
+real en `false`. Su inicio solo ofrece ejemplos y el ensayo ficticio. No se instala
+encima del cliente principal ni migra sus datos.
+
+Ruta para el dueño: [ensayo POCO/HyperOS](docs/POCO_HYPEROS_VALIDACION_OFFLINE.md).
+Contrato nuevo: [álbumes y evidencia del proveedor](docs/ALBUM_PROVIDER_PROOF.md),
+[protocolo asíncrono](docs/ASYNC_RELAY_PROTOCOL.md). **Álbum vivo: HOLD;
+ACK real: no verificado.** Ningún timeout ni contador de diez elementos acredita
+un álbum completo. Los párrafos siguientes describen las capacidades heredadas
+del cliente base, que no están habilitadas como sesión en este APK de ensayo.
 
 Cliente Android nativo con TDLib. No es Nicegram, no está afiliado a Telegram y no es el lector Centro de Alertas. Una cuenta real con identidad propia de aplicación. Código recuperado de `projects/canal` (PR #3) y aislado aquí; ningún otro producto se modifica.
 
@@ -40,7 +53,11 @@ El workflow dedicado genera una APK debug, checksum, identidad de commit y repor
 
 Firma debug temporal del runner: no es una clave de producción persistente. Antes de actualizaciones permanentes debe configurarse una firma privada mantenida; no se publica ningún keystore. No se promete actualización sobre una APK de otra firma. La app coexiste con Telegram/Nicegram y Centro de Alertas.
 
-## Activación en el teléfono
+## Activación del cliente base — no disponible en este APK offline
+
+Para esta entrega sigue únicamente la [guía de ensayo](docs/POCO_HYPEROS_VALIDACION_OFFLINE.md).
+Los pasos heredados siguientes requieren otra compilación revisada y su propia
+autorización; el candidato actual no inicia sesión.
 
 1. Registrar aplicación propia en `https://my.telegram.org/apps` (API development tools), o usar una identidad propia ya creada. Título CanalDeck, short name canaldeckpersonal, Android.
 2. En CanalDeck → Empezar, introducir `api_id` y `api_hash` locales.
