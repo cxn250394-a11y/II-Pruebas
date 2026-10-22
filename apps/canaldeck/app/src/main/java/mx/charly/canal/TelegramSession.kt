@@ -220,6 +220,18 @@ class TelegramSession private constructor(private val context: Context) {
             }
         }
     }
+    /** Ask TDLib for the original post link; never construct from IDs or copy media. */
+    fun messageLink(m: Message, callback: (String?) -> Unit) {
+        if (!ready || closing || m.id <= 0) { callback(null); return }
+        scope.launch {
+            val response = client.getMessageLink(
+                chatId = m.chatId, messageId = m.id, mediaTimestamp = 0,
+                forAlbum = false, inMessageThread = false
+            )
+            val link = if (response is TdlResult.Success) response.result.link else null
+            callback(PickBridgeRules.validTelegramLink(link))
+        }
+    }
     fun media(fileId: Int, maxBytes: Long, callback: (String?) -> Unit) {
         if (!ready || closing) { callback(null); return }
         scope.launch {
