@@ -120,11 +120,20 @@ class CanalActivity : Screen() {
         },LinearLayout.LayoutParams(0,-2,1f))};root.addView(n)
     }
     private fun home(){
+        if(BuildConfig.OFFLINE_REHEARSAL_ONLY){
+            page("home","CanalDeck · ensayo offline","Datos ficticios · sin cuenta ni conexión")
+            card("Prueba el flujo de picks","Recorre un álbum inventado y sus confirmaciones. Esta instalación de ensayo está separada de CanalDeck principal y no permite conectar Telegram.")
+            button("Ensayo offline · sin cuenta",true){startActivity(Intent(this,AsyncOfflineDemoActivity::class.java))}
+            button("Ver diseño con ejemplos — sin iniciar sesión"){demo=true;kind="all";query="";folder="*";chats()}
+            label("0 envíos reales. No necesitas teléfono, códigos ni identidad de aplicación.",14f,accent)
+            return
+        }
         page("home","CanalDeck","Tu Telegram, organizado a tu manera · beta 0.4")
         card("Tus canales, sin perder lo nuevo","Cliente propio con TDLib. Una cuenta real, carpetas locales, favoritos, lectura de canales y mensajes de texto. No es la aplicación Nicegram ni una app oficial de Telegram.")
         statusLabel=label(TelegramSession.current?.let{if(it.ready)"${it.accountName} · ${it.network}" else it.status} ?: "Sin sesión iniciada",15f,accent)
         button(if(TelegramSession.current?.ready==true)"Abrir mis conversaciones" else "Empezar · conectar mi cuenta",true){demo=false;if(TelegramSession.current?.ready==true)chats()else connect()}
         button("Ver diseño con ejemplos — sin iniciar sesión"){demo=true;kind="all";query="";folder="*";chats()}
+        button("Ensayo offline · sin cuenta"){startActivity(Intent(this,AsyncOfflineDemoActivity::class.java))}
         button("Ayuda para activar mi cuenta"){guide()}
         button("Identidad de aplicación / configuración"){demo=false;credentials()}
         label("Primera vez: crea tu identidad gratuita de aplicación en Telegram y pégala solo aquí. Después introduces tu teléfono, código y, si aplica, contraseña. No necesitas enviarlos a este chat.",13f,soft)
@@ -318,6 +327,14 @@ class CanalActivity : Screen() {
             }.setNegativeButton("Cancelar", null).show()
     }
     private fun settings(){
+        if(BuildConfig.OFFLINE_REHEARSAL_ONLY){
+            page("settings","Ensayo offline","Datos ficticios · sin cuenta")
+            card("Instalación de ensayo","Esta versión no conecta Telegram, no utiliza una cuenta real y no modifica CanalDeck principal. Los estados inciertos del ensayo se conservan en este teléfono.")
+            button("Ensayo offline · sin cuenta",true){startActivity(Intent(this,AsyncOfflineDemoActivity::class.java))}
+            button("Volver al inicio"){home()}
+            nav()
+            return
+        }
         page("settings","Ajustes","Tu sesión y tu privacidad")
         val s=TelegramSession.current
         statusLabel=label(s?.let{if(it.ready)"${it.accountName} · ${it.network}"else it.status} ?: "Sin conexión",15f,accent)

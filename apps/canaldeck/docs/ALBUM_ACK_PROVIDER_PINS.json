@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "scope": "Source-contract investigation only; no real account/native-binary attestation, no network sends, no independent ratification.",
+  "wrapper": {
+    "repository": "g000sha256/tdl-coroutines",
+    "requested_tag": "14.0.0",
+    "annotated_tag_object": "675fa3b5cebfc7eaf55d0a2172b2279b73431005",
+    "commit": "e4408ddf785ddd74b7605af9569563133c2dc78c",
+    "recursive_tree_truncated": false,
+    "public_GetMessageAlbum_function_present": false,
+    "gitlink": {
+      "path": "td",
+      "commit": "a9966eb3704a3351568c28013fed67d797c17828"
+    },
+    "files": [
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/Message.kt",
+        "git_blob_sha": "cd26def4b78b6ef97a261e7a566f20739a784ad7",
+        "sha256": "14ea83b3f283e09105c1cd1d62fcb5d0a54b4ee76cbc02cf03b5f2c64520c729",
+        "bytes": 19279,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/Message.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/UpdateNewMessage.kt",
+        "git_blob_sha": "ae6be4f1b64af74329cb841e923b8aa7e5eca347",
+        "sha256": "099d8db9c7e5cff63a5ae57a91aeba44ec808d8750a610c154f1376fb0fb5f0f",
+        "bytes": 1670,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/UpdateNewMessage.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/MessageSendOptions.kt",
+        "git_blob_sha": "837d25db6bb9ac42fea873156f3997775dd9be7e",
+        "sha256": "dec0efff0a915bb79a1d3b467877cf2681062e1acbc03f834697b1fa18d23555",
+        "bytes": 6394,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/MessageSendOptions.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/MessageSendingStatePending.kt",
+        "git_blob_sha": "0c5d4e489fd236becff047df4af81c60456918a9",
+        "sha256": "21064df951194aae0082dc18afa61d554d2f1604dfe3542c9e5e96b14cc47823",
+        "bytes": 1795,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/MessageSendingStatePending.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/MessageSendingStateFailed.kt",
+        "git_blob_sha": "a7cb6fccba1ddba792983bb8d01f0725cae16368",
+        "sha256": "06676a643bc164c74b14a2910c7c61c313bd4dc960dde101311820d9cae3c7ef",
+        "bytes": 4337,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/MessageSendingStateFailed.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/UpdateMessageSendSucceeded.kt",
+        "git_blob_sha": "d10cd58e5533ff77060402a67df15efac4bf6b9a",
+        "sha256": "f35521c2853aa62c2dd92ed4441fd82b1742d8b9bb90f13aa2c388945d50271a",
+        "bytes": 2245,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/UpdateMessageSendSucceeded.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/UpdateMessageSendFailed.kt",
+        "git_blob_sha": "7d1db59e25a22ba11e828b6f8634cbf765407afe",
+        "sha256": "044c149bd6d4988681f6f5029c0408946910578336be28a2f7ca84f542c808f3",
+        "bytes": 2466,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/UpdateMessageSendFailed.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/UpdateMessageSendAcknowledged.kt",
+        "git_blob_sha": "c01dfd842779ce15e3d6cc2f07ceda6dc286e82f",
+        "sha256": "8272e464a629e85313b17eb932f516c8bfb3b2baebd6a1cd45b20974e0e2823d",
+        "bytes": 2256,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/UpdateMessageSendAcknowledged.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/PushMessageContentMediaAlbum.kt",
+        "git_blob_sha": "b715e4ea16129c25ba938bf0b4e8a2d7ccf4bb24",
+        "sha256": "0be6747c91a589104962da7edf6c15393b08eff68ff8f6cedd59ff95d205aff2",
+        "bytes": 3035,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/PushMessageContentMediaAlbum.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/NotificationTypeNewPushMessage.kt",
+        "git_blob_sha": "24f8b4f92fab47c4fce00ad1f472b942e41de123",
+        "sha256": "b99afe47ca42d61b4756892145d9a75e70dee69c508e4a833a02393abaad41ae",
+        "bytes": 3201,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/NotificationTypeNewPushMessage.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/function/GetChatHistory.kt",
+        "git_blob_sha": "1ed1fd09c7a88fc8600860ef7d6ca673f0ee770f",
+        "sha256": "31c8a43b88f3d6f29932eee7773a6d59cbbfdff726d0a743658c7dbb784e2dc3",
+        "bytes": 931,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/function/GetChatHistory.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/function/ForwardMessages.kt",
+        "git_blob_sha": "d978d8ca672123bc74d006f6f3056f43b6e6895f",
+        "sha256": "95aaff8640f96d1557b082ac1f96ffc54680a86e20683c210697b87bb832d709",
+        "bytes": 1136,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/function/ForwardMessages.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/TdlClient.kt",
+        "git_blob_sha": "8e130ebb9f37ce8bdc5ea8572cab0e7964f23999",
+        "sha256": "2d1a310020b6f65d90aea9853b773dd09b891c541055e85e014c0f783b85c825",
+        "bytes": 539842,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/TdlClient.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/UpdateDeleteMessages.kt",
+        "git_blob_sha": "72136ab2d622cdebec0fdb946073e082af7ec2ce",
+        "sha256": "cc69ee2d4c31fb7758a540698bc991bd35d72aaa021f6ba76f5043780a76cce8",
+        "bytes": 2922,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/UpdateDeleteMessages.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/MessageText.kt",
+        "git_blob_sha": "746a89b75a2a2b2fa7b444205904f29f80414583",
+        "sha256": "3b7e82de9ef2ba68bab5205c578d40233201659394ee5c5d574d5750c53367dd",
+        "bytes": 2418,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/MessageText.kt"
+      },
+      {
+        "path": "tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/FormattedText.kt",
+        "git_blob_sha": "4422a70a38353c9438a6e72cd12729671be1f7bb",
+        "sha256": "e90b48138262e222812d96aaae39756abcf65b8813338dd85353e9d5ead99db6",
+        "bytes": 2386,
+        "url": "https://raw.githubusercontent.com/g000sha256/tdl-coroutines/e4408ddf785ddd74b7605af9569563133c2dc78c/tdl-coroutines/src/commonMainGenerated/kotlin/dev/g000sha256/tdl/dto/FormattedText.kt"
+      }
+    ]
+  },
+  "tdlib": {
+    "repository": "tdlib/td",
+    "commit": "a9966eb3704a3351568c28013fed67d797c17828",
+    "files": [
+      {
+        "path": "td/generate/scheme/td_api.tl",
+        "git_blob_sha": "df3e3a051a00aa86ef9ad0433e555872eb5df2dd",
+        "sha256": "b8b6a863746fc580815c6d04e9e34728b654b15a12940087f06757b2097ce4c5",
+        "bytes": 1138080,
+        "url": "https://raw.githubusercontent.com/tdlib/td/a9966eb3704a3351568c28013fed67d797c17828/td/generate/scheme/td_api.tl"
+      },
+      {
+        "path": "td/telegram/MessagesManager.cpp",
+        "git_blob_sha": "9db39ab3f8723aac0ecb416dbfdf5f3929447968",
+        "sha256": "28871a43ea22c34cd410727a9dcde5c9b1b82238a5622e3f8444c4d11b2a37cf",
+        "bytes": 1598372,
+        "url": "https://raw.githubusercontent.com/tdlib/td/a9966eb3704a3351568c28013fed67d797c17828/td/telegram/MessagesManager.cpp"
+      },
+      {
+        "path": "td/telegram/MessagesManager.h",
+        "git_blob_sha": "8eaf7c97c76cc5923ac1156df2db913f1c328e20",
+        "sha256": "dc434c08a25cac1e62dd488f8a80a1a3758b51415feed8749b69860a23c4af91",
+        "bytes": 169609,
+        "url": "https://raw.githubusercontent.com/tdlib/td/a9966eb3704a3351568c28013fed67d797c17828/td/telegram/MessagesManager.h"
+      },
+      {
+        "path": "td/telegram/MessageQueryManager.cpp",
+        "git_blob_sha": "2b295bd5216d8279b0090982015527b7994afc1a",
+        "sha256": "e41b10797084793e63a8139c1be7c61f68c72dd39a416ee79ed2221d362b0f1a",
+        "bytes": 194846,
+        "url": "https://raw.githubusercontent.com/tdlib/td/a9966eb3704a3351568c28013fed67d797c17828/td/telegram/MessageQueryManager.cpp"
+      },
+      {
+        "path": "td/telegram/MessageId.h",
+        "git_blob_sha": "9aecbad6bcac5221e5673bf40e1416254aa6cc28",
+        "sha256": "23fcc3e2540901b10f930faf53e6356593c8fa2290d7e686b1e2f022fb558433",
+        "bytes": 6366,
+        "url": "https://raw.githubusercontent.com/tdlib/td/a9966eb3704a3351568c28013fed67d797c17828/td/telegram/MessageId.h"
+      },
+      {
+        "path": "td/telegram/NotificationType.cpp",
+        "git_blob_sha": "ff9d6ac8e17d6c10d647392c78f28c0aa7e7c9ed",
+        "sha256": "7d422c7d8d280214ef15c50d640a27096abf07baccfdc9e087604a6ca4b76e56",
+        "bytes": 20667,
+        "url": "https://raw.githubusercontent.com/tdlib/td/a9966eb3704a3351568c28013fed67d797c17828/td/telegram/NotificationType.cpp"
+      },
+      {
+        "path": "td/telegram/NotificationManager.cpp",
+        "git_blob_sha": "f9a0cec808aff9564ee24373d0e8412857cf230f",
+        "sha256": "32fc810625aaf3574e6f79bdcbcb1094bf0aaad3be63bc5e8ed27e6e5584fa2e",
+        "bytes": 181147,
+        "url": "https://raw.githubusercontent.com/tdlib/td/a9966eb3704a3351568c28013fed67d797c17828/td/telegram/NotificationManager.cpp"
+      },
+      {
+        "path": "td/telegram/MessageId.cpp",
+        "git_blob_sha": "0855972222fe5066e11ec398c711c0317b4620ed",
+        "sha256": "82c976d837a51ae2e7a1d85493fc6aeb85b6b6c078c5e3583e765b044e59a32c",
+        "bytes": 9032,
+        "url": "https://raw.githubusercontent.com/tdlib/td/a9966eb3704a3351568c28013fed67d797c17828/td/telegram/MessageId.cpp"
+      }
+    ]
+  },
+  "conclusions": {
+    "current_live_album_completeness": "HOLD_NO_PUBLIC_BOUND_COMPLETENESS_CONTRACT",
+    "push_album_count_exists": true,
+    "push_album_count_is_live_album_proof": false,
+    "async_ack_source_contract": "AVAILABLE_OFFLINE_CANDIDATE_ONLY",
+    "real_sends": 0
+  }
+}

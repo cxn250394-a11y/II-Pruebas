@@ -2,12 +2,40 @@
   "schema_version": 1,
   "runtime": "Gradle Android JVM/Robolectric",
   "totals": {
-    "tests": 192,
+    "tests": 264,
     "failures": 0,
     "errors": 0,
     "skipped": 0
   },
   "suites": [
+    {
+      "name": "mx.charly.canal.AlbumCompletenessGateTest",
+      "tests": "8",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "mx.charly.canal.AsyncOfflineDemoTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "mx.charly.canal.AsyncRelayDatabaseTest",
+      "tests": "10",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "mx.charly.canal.AsyncRelayEngineTest",
+      "tests": "40",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
     {
       "name": "mx.charly.canal.CanalSmokeTest",
       "tests": "6",
@@ -39,6 +67,13 @@
     {
       "name": "mx.charly.canal.LocalPickDeliveryTest",
       "tests": "13",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "mx.charly.canal.OfflineBuildIsolationTest",
+      "tests": "2",
       "failures": "0",
       "errors": "0",
       "skipped": "0"
@@ -102,6 +137,13 @@
     {
       "name": "mx.charly.canal.RelaySettingsSelectionTest",
       "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "mx.charly.canal.TdlAsyncAckMapperTest",
+      "tests": "8",
       "failures": "0",
       "errors": "0",
       "skipped": "0"

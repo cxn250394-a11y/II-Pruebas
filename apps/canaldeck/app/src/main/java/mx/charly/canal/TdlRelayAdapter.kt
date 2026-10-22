@@ -115,14 +115,16 @@ internal class TdlRelayAdapter(
             if (properties != null || knownProtected) protected[id] = knownProtected
         }
         if (!sameSession(config.accountId)) return null
-        // TDLib 14.0.0 has no authoritative album member count. A caller's timeout or a
-        // partial list must never turn a live album into a supposedly complete one.
+        // The pinned incoming-message API has no account/chat/album/member-set
+        // completeness witness. A PUSH total_count is not such a witness either.
+        // Caller booleans, history windows and silence never authorize a live album.
         val single = relay.size == 1 && relay.single().albumId == 0L
         // This adapter is called only from the UpdateNewMessage coordinator path.
         // Message.isFromOffline denotes sender-side scheduled/away/greeting actions,
         // not receiver history. Anti-replay is the durable baseline, not that flag.
-        val batch = RelayBatch(relay, completeAlbum = albumComplete && single,
+        val observed = RelayBatch(relay, completeAlbum = albumComplete && single,
             expectedAlbumSize = null, liveUpdate = true, synthetic = false)
+        val batch = AlbumCompletenessGate.reconstruct(observed).batch
         return batch to RelayPermissions(config.accountId, sourceId, destination,
             sourceAllowed, destinationAllowed, source.hasProtectedContent, forwardable, protected)
     }

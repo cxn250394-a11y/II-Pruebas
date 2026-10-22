@@ -8,7 +8,7 @@ m = ET.parse(root / 'app/src/main/AndroidManifest.xml').getroot()
 a = m.find('application')
 assert a.get(ns+'allowBackup') == 'false'
 assert a.get(ns+'usesCleartextTraffic') == 'false'
-allowed = {'android.permission.INTERNET', 'android.permission.POST_NOTIFICATIONS', 'android.permission.FOREGROUND_SERVICE', 'android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING'}
+allowed = {'android.permission.POST_NOTIFICATIONS', 'android.permission.FOREGROUND_SERVICE', 'android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING'}
 assert {p.get(ns+'name') for p in m.findall('uses-permission')} == allowed
 assert len(a.findall('service')) == 1 and a.find('service').get(ns+'exported') == 'false'
 for path in [root / 'app/src/main/java', root / 'ui/src/main/java']:
