@@ -53,6 +53,9 @@ class ConnectionService : Service() {
         val mode = org.pickMode(m.chatId)
         if (mode != PickWatchMode.OFF) {
             if (quiet) return
+            // A delayed sync after reconnect must not announce an old pick as new.
+            val secondsOld = System.currentTimeMillis() / 1000L - m.date.toLong()
+            if (secondsOld !in 0L..(4L * 3600L)) return
             val plain = when (val c = m.content) {
                 is dev.g000sha256.tdl.dto.MessageText -> c.text.text
                 is dev.g000sha256.tdl.dto.MessagePhoto -> c.caption.text
@@ -65,7 +68,11 @@ class ConnectionService : Service() {
             ) ?: return
             // TDLib's official link API is fail-closed for messages without a link.
             s.messageLink(m) { link ->
-                if (s === session && s.ready && !s.closing) publishNotice(m, candidate.render(link), candidate.firstLine)
+                if (s === session && s.ready && !s.closing &&
+                    org.pickMode(m.chatId) == mode &&
+                    org.acceptPick(m.chatId, m.id, m.date.toLong(), m.mediaAlbumId)) {
+                    publishNotice(m, candidate.render(link), candidate.firstLine)
+                }
             }
             return
         }
