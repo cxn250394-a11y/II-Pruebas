@@ -36,11 +36,11 @@ class ConnectionService : Service() {
         val open = PendingIntent.getActivity(this, 0, Intent(this, CanalActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val stop = PendingIntent.getService(this, 1, Intent(this, ConnectionService::class.java).setAction("stop"), PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this,"connection").setSmallIcon(mx.charly.ui.R.drawable.ic_suite)
-            .setContentTitle("CanalDeck · conexión activa").setContentText(status).setContentIntent(open)
+            .setContentTitle("CanalDeck · conexión activa (no es un mensaje)").setContentText("Servicio funcionando · las publicaciones llegan en avisos separados si están activados").setContentIntent(open)
             .setOngoing(true).setOnlyAlertOnce(true)
             .addAction(Notification.Action.Builder(null,"Desconectar",stop).build()).build()
     }
-    private fun updateConnection() { val s = session ?: return; manager.notify(1,connectionNotification(if(s.ready) s.network else s.status)) }
+    private fun updateConnection() { val s = session ?: return; manager.notify(1,connectionNotification(if(s.ready) "Conectado" else s.status)) }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int { if(intent?.action=="stop") stopSelf(); return START_NOT_STICKY }
     private fun notice(m: Message) {
         val s = session ?: return

@@ -56,6 +56,11 @@ class CanalActivity : Screen() {
     private val drafts = mutableMapOf<Pair<Long,Long>,String>()
     private var mediaPlayer: MediaPlayer? = null
     private var mediaDialog: AlertDialog? = null
+    private var protectedMedia = false
+    private var backupPassword: CharArray? = null
+    private var backupMode = ""
+    private val exportCode = 551
+    private val importCode = 552
     private val uiChange = Runnable { refreshState() }
     private val readVisible = Runnable { acknowledgeVisible() }
     private val changed: () -> Unit = { handler.removeCallbacks(uiChange); handler.postDelayed(uiChange,120) }
@@ -102,8 +107,14 @@ class CanalActivity : Screen() {
         }
     }
     private fun secure() {
-        if(screen=="credentials"||screen=="login"||(!demo&&TelegramSession.current!=null))window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        val current = TelegramSession.current
+        val chat=current?.chats?.get(activeChat)
+        val protectedChat=screen=="history" && (chat?.hasProtectedContent==true || chat?.type is ChatTypeSecret)
+        val sensitive=screen=="credentials" || screen=="login" || protectedMedia || protectedChat
+        val allow= !sensitive && (demo || current==null || org.screenshots)
+        allowDialogScreenshots=allow
+        if(allow) window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
     private fun saveDraft(){val c=composer;if(screen=="history"&&c!=null)drafts[(TelegramSession.current?.accountId?:0) to activeChat]=c.text.toString()}
     private fun page(name:String,title:String,subtitle:String){
@@ -120,7 +131,7 @@ class CanalActivity : Screen() {
         },LinearLayout.LayoutParams(0,-2,1f))};root.addView(n)
     }
     private fun home(){
-        page("home","CanalDeck","Tu Telegram y tus canales · Personal 0.3.1")
+        page("home","CanalDeck","Tu Telegram y tus canales · Personal 0.3.2")
         card("Tus canales, sin perder lo nuevo","Cliente propio con TDLib. Una cuenta real, carpetas locales, favoritos, lectura de canales y mensajes de texto. No es la aplicación Nicegram ni una app oficial de Telegram.")
         statusLabel=label(TelegramSession.current?.let{if(it.ready)"${it.accountName} · ${it.network}" else it.status} ?: "Sin sesión iniciada",15f,accent)
         button(if(TelegramSession.current?.ready==true)"Abrir mis conversaciones" else "Empezar · conectar mi cuenta",true){demo=false;if(TelegramSession.current?.ready==true)chats()else connect()}
@@ -248,9 +259,13 @@ class CanalActivity : Screen() {
         org.folders().forEach{(id,name)->
             val count=TelegramSession.current?.chats?.keys?.count{org.folder(it)==id}?:0
             card(name,"$count conversaciones cargadas"){folder=id;kind="all";chats()}
-            button("Editar «$name»"){dialog().setItems(arrayOf("Cambiar nombre","Eliminar carpeta")){_,choice->
-                if(choice==0)prompt("Nuevo nombre"){n->if(org.renameFolder(id,n))folders()else toast("Nombre duplicado o inválido")}
-                else confirm("Eliminar carpeta","Solo elimina esta carpeta local; no borra chats, mensajes ni favoritos."){org.deleteFolder(id);if(folder==id)folder="*";folders()}
+            button("Orden y opciones · $name"){dialog().setItems(arrayOf("↑ Subir", "↓ Bajar", "Cambiar nombre", "Eliminar carpeta")){_,choice->
+                when(choice) {
+                    0 -> { if(!org.moveFolder(id,-1))toast("Ya es la primera carpeta");folders() }
+                    1 -> { if(!org.moveFolder(id,1))toast("Ya es la última carpeta");folders() }
+                    2 -> prompt("Nuevo nombre"){n->if(org.renameFolder(id,n))folders()else toast("Nombre duplicado o inválido")}
+                    else -> confirm("Eliminar carpeta","Solo elimina esta carpeta local; no borra chats, mensajes ni favoritos."){org.deleteFolder(id);if(folder==id)folder="*";folders()}
+                }
             }.show()}
         }
         label("Para mover un canal: mantén pulsada su tarjeta → Carpeta. Puedes poner nombres como Trabajo, Música o Deportes.",13f,soft);nav()
@@ -301,6 +316,12 @@ class CanalActivity : Screen() {
             button("Cargar también conversaciones archivadas"){s.refresh(1000,true);toast("Se solicitó el archivo. Revisa Chats.")}
             button("Borrar los avisos actuales de CanalDeck"){ConnectionService.current?.clearAll()}
         }
+        if(s?.ready==true&&!demo){
+            label("Favoritos y carpetas · conservar entre APK",18f)
+            button("Guardar respaldo cifrado"){prepareBackup(true)}
+            button("Restaurar respaldo de esta cuenta"){prepareBackup(false)}
+            label("Puedes respaldar favoritos, prioridades, carpetas, su orden y reglas de aviso. La clave debe tener 12+ caracteres y NO se guarda. No incluye chats, archivos, sesiones ni credenciales.",12f,soft)
+        }
         button("Permisos y notificaciones de Android"){try{startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName))}catch(_:Exception){toast("Revisa CanalDeck en Ajustes de Android")}}
         label("Mantén pulsado un chat → Prioridad para verlo arriba; puedes filtrar solo prioritarios. Prioridad NO activa avisos apagados. Los avisos normales y prioritarios usan grupos Android separados; el sistema puede seguir agrupándolos.",13f,soft)
         label("Para activar un canal: mantén pulsado el chat → Configurar avisos. Todos empiezan apagados. La vista previa está oculta de fábrica.",13f,soft)
@@ -310,6 +331,69 @@ class CanalActivity : Screen() {
         button("Ayuda de activación"){guide()}
         button("Licencias y alcance"){dialog().setTitle("CanalDeck Personal 0.3.1 beta").setMessage("Cliente independiente, no afiliado a Nicegram ni Telegram. TDLib: Boost 1.0. TDL Coroutines y Kotlin Coroutines: Apache 2.0. Licencias incluidas en assets. Una cuenta. Sin llamadas, chats secretos, exportación de contenido protegido ni pagos. La beta usa firma de prueba y no ha validado tu cuenta real.").setPositiveButton("Cerrar",null).show()}
         nav()
+    }
+    private fun prepareBackup(exporting: Boolean) {
+        if(TelegramSession.current?.ready!=true || demo)return
+        val password=EditText(this).apply {
+            hint="Clave de respaldo (12+ caracteres)"
+            inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            isSaveEnabled=false
+            importantForAutofill=View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+        }
+        allowDialogScreenshots=false
+        dialog().setTitle(if(exporting)"Guardar organización cifrada"else"Restaurar organización")
+            .setView(password).setNegativeButton("Cancelar",null)
+            .setPositiveButton("Continuar"){_,_->
+                val chars=password.text.toString().toCharArray();password.text.clear()
+                if(chars.size<12){chars.fill(0.toChar());toast("La clave necesita 12 caracteres o más")}
+                else {
+                    backupPassword?.fill(0.toChar());backupPassword=chars
+                    try {
+                        val intent=Intent(if(exporting)Intent.ACTION_CREATE_DOCUMENT else Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE);type="application/octet-stream"
+                            if(exporting)putExtra(Intent.EXTRA_TITLE,"canaldeck-organizacion.cdo")
+                        }
+                        @Suppress("DEPRECATION")
+                        startActivityForResult(intent,if(exporting)exportCode else importCode)
+                    }catch(_:Exception){backupPassword?.fill(0.toChar());backupPassword=null;toast("No se pudo abrir el selector de archivos")}
+                }
+                secure()
+            }.show()
+    }
+    @Deprecated("Android Activity file picker compatibility")
+    override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
+        super.onActivityResult(requestCode,resultCode,data)
+        if(requestCode!=exportCode&&requestCode!=importCode)return
+        val password=backupPassword;backupPassword=null
+        try {
+            if(resultCode!=RESULT_OK || data?.data==null || password==null)return
+            require(TelegramSession.current?.ready==true)
+            val uri=requireNotNull(data.data)
+            if(requestCode==exportCode) {
+                val bytes=OrganizationBackup.encrypt(org.exportOrganization().toByteArray(Charsets.UTF_8),password)
+                contentResolver.openOutputStream(uri,"w")?.use{it.write(bytes)} ?: error("Archivo no disponible")
+                toast("Respaldo cifrado guardado. Conserva tu contraseña.")
+            }else {
+                val bytes=java.io.ByteArrayOutputStream()
+                contentResolver.openInputStream(uri)?.use{input->
+                    val buffer=ByteArray(4096)
+                    while(true) {
+                        val n=input.read(buffer)
+                        if(n<0)break
+                        bytes.write(buffer,0,n)
+                        require(bytes.size()<=400_000)
+                    }
+                } ?: error("Archivo no disponible")
+                val plaintext=OrganizationBackup.decrypt(bytes.toByteArray(),password)
+                val valid=org.importOrganization(plaintext.toString(Charsets.UTF_8))
+                plaintext.fill(0)
+                if(!valid)error("El respaldo no pertenece a esta cuenta")
+                ConnectionService.current?.clearAll()
+                toast("Organización restaurada")
+                if(screen=="folders")folders()else if(screen=="list")refreshChats()else settings()
+            }
+        }catch(_:Exception){toast("No se pudo procesar el respaldo: revisa la clave, el archivo y que sea la misma cuenta")}
+        finally {password?.fill(0.toChar());secure()}
     }
     private fun openChat(id:Long){
         val s=TelegramSession.current ?: return
@@ -397,9 +481,35 @@ class CanalActivity : Screen() {
         dialog().setTitle("Mensaje").setItems(actions.toTypedArray()){_,n->when(actions[n]){
             "Ver texto completo"->{val t=text(TelegramSession.preview(m.content),15f).apply{setPadding(dp(18),dp(12),dp(18),dp(12))};dialog().setView(ScrollView(this).apply{addView(t)}).setPositiveButton("Cerrar",null).show()}
             "Responder con texto"->{reply=m;replyLabel?.text="Respuesta: ${TelegramSession.preview(m.content).take(80)} · tocar para quitar";composer?.requestFocus()}
-            "Abrir enlace"->dialog().setTitle("Enlace externo").setItems(links.toTypedArray()){_,i->confirm("Abrir navegador",links[i]){website(links[i])}}.show()
+            "Abrir enlace"->dialog().setTitle("Abrir enlace").setItems(links.toTypedArray()){_,i->openTelegramLink(links[i])}.show()
             else->playMedia(m)
         }}.show()
+    }
+    private fun openTelegramLink(link:String) {
+        val parsed=MessageLinks.parsePublic(link)
+        val session=TelegramSession.current
+        if(parsed!=null && session?.ready==true){
+            toast("Abriendo enlace público dentro de CanalDeck…")
+            session.resolvePublicLink(parsed.username,parsed.messageId){chatId,error->
+                if(isDestroyed||!foreground||TelegramSession.current!==session)return@resolvePublicLink
+                if(chatId==null){toast(error ?: "No se encontró el canal desde tu cuenta");return@resolvePublicLink}
+                demo=false;openChat(chatId)
+                val message=parsed.messageId
+                if(message!=null)session.fetchLinkedMessage(chatId,message){m->
+                    if(!isDestroyed&&foreground&&screen=="history"&&activeChat==chatId){
+                        if(m==null)toast("Conversación abierta. Esa publicación no está disponible.")
+                        else dialog().setTitle("Publicación dentro de CanalDeck")
+                            .setMessage(TelegramSession.preview(m.content).take(9000))
+                            .setPositiveButton("Cerrar",null).show()
+                    }
+                }
+            }
+        }else{
+            val reason=if(parsed==null)"El enlace no es un canal público compatible o es una invitación privada."else"No hay una sesión conectada."
+            dialog().setTitle("Abrir fuera de CanalDeck")
+                .setMessage("$reason No se enviará nada automáticamente. ¿Quieres abrirlo fuera de esta app?")
+                .setNegativeButton("Cancelar",null).setPositiveButton("Abrir externamente"){_,_->website(link)}.show()
+        }
     }
     private fun playMedia(m:Message){
         if(m.selfDestructType!=null){toast("El contenido de autodestrucción no está implementado en esta beta");return}
@@ -410,23 +520,40 @@ class CanalActivity : Screen() {
         val id=activeChat;val s=TelegramSession.current?:return
         confirm("Descargar y abrir","Se descargará este archivo a la carpeta privada de CanalDeck. Límite: ${cap/1_000_000} MB. Puede consumir datos móviles."){
             toast("Descargando archivo…")
-            s.media(file.id,cap){path->if(!isDestroyed&&foreground&&TelegramSession.current===s&&activeChat==id){if(path==null)toast("La descarga no se completó o excede el límite")else displayMedia(path,c is MessagePhoto,c is MessageVideo)}}
+            s.media(file.id,cap){path->if(!isDestroyed&&foreground&&TelegramSession.current===s&&activeChat==id){if(path==null)toast("La descarga no se completó o excede el límite")else displayMedia(path,c is MessagePhoto,c is MessageVideo,m.canBeSaved && s.chats[id]?.hasProtectedContent != true)}}
         }
     }
-    private fun displayMedia(path:String,photo:Boolean,video:Boolean){
+    private fun displayMedia(path:String,photo:Boolean,video:Boolean,canAnalyze:Boolean){
         try{
             val f=java.io.File(path);require(f.canonicalPath.startsWith(filesDir.canonicalPath+"/")&&f.isFile)
             mediaDialog?.dismiss()
+            protectedMedia = !canAnalyze
+            secure()
             if(photo){val opt=android.graphics.BitmapFactory.Options().apply{inJustDecodeBounds=true};android.graphics.BitmapFactory.decodeFile(path,opt);require(opt.outWidth>0&&opt.outHeight>0);var sample=1;while(opt.outWidth/sample>1600||opt.outHeight/sample>1600)sample*=2;opt.inJustDecodeBounds=false;opt.inSampleSize=sample
                 val bmp=android.graphics.BitmapFactory.decodeFile(path,opt)?:error("Invalid photo");val image=ImageView(this).apply{adjustViewBounds=true;setImageBitmap(bmp)}
-                mediaDialog=dialog().setView(image).setPositiveButton("Cerrar",null).create()
+                val builder=dialog().setTitle("Foto del canal").setView(image).setPositiveButton("Cerrar",null)
+                if(canAnalyze)builder.setNeutralButton("Leer apuesta (OCR local)"){_,_->
+                    LocalBetText.read(bmp){recognized,error->
+                        if(isDestroyed||!foreground)return@read
+                        if(recognized.isNullOrBlank()){
+                            info("Análisis de imagen",error ?: "No se reconoció texto legible");return@read
+                        }
+                        val labels=LocalBetText.labels(recognized)
+                        val heading=if(labels.isEmpty())"No se identificaron mercados"else labels.joinToString(", ")
+                        dialog().setTitle("Texto leído · sin validar")
+                            .setMessage(listOf("Posibles campos: $heading",recognized,"Comprueba casa, partido, selección, cuota y vigencia. Esta lectura no confirma la apuesta ni calcula valor esperado. No se reenvió nada.").joinToString(System.lineSeparator()+System.lineSeparator()))
+                            .setPositiveButton("Cerrar",null).show()
+                    }
+                }
+                mediaDialog=builder.create()
+                mediaDialog?.setOnDismissListener{protectedMedia=false;secure()}
             }else if(video){val v=VideoView(this);val control=MediaController(this);v.setMediaController(control);v.setVideoURI(Uri.fromFile(f));v.setOnPreparedListener{v.start()};v.setOnErrorListener{_,_,_->toast("El teléfono no pudo reproducir este formato");true}
-                mediaDialog=dialog().setView(v).setPositiveButton("Cerrar",null).create();mediaDialog?.setOnDismissListener{v.stopPlayback()}
+                mediaDialog=dialog().setView(v).setPositiveButton("Cerrar",null).create();mediaDialog?.setOnDismissListener{v.stopPlayback();protectedMedia=false;secure()}
             }else{val box=column();val toggle=Button(this).apply{text="Pausar / continuar";setOnClickListener{mediaPlayer?.let{if(it.isPlaying)it.pause()else it.start()}}};box.addView(toggle)
                 mediaPlayer=MediaPlayer().apply{setDataSource(path);setOnPreparedListener{it.start()};setOnErrorListener{_,_,_->toast("Audio no compatible");true};prepareAsync()}
-                mediaDialog=dialog().setTitle("Audio de Telegram").setView(box).setPositiveButton("Cerrar",null).create();mediaDialog?.setOnDismissListener{mediaPlayer?.release();mediaPlayer=null}
+                mediaDialog=dialog().setTitle("Audio de Telegram").setView(box).setPositiveButton("Cerrar",null).create();mediaDialog?.setOnDismissListener{mediaPlayer?.release();mediaPlayer=null;protectedMedia=false;secure()}
             }
             mediaDialog?.show()
-        }catch(_:Exception){mediaPlayer?.release();mediaPlayer=null;toast("No se pudo abrir el contenido de forma segura")}
+        }catch(_:Exception){protectedMedia=false;secure();mediaPlayer?.release();mediaPlayer=null;toast("No se pudo abrir el contenido de forma segura")}
     }
 }

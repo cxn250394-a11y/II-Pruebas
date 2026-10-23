@@ -56,7 +56,7 @@ class DeviceTest {
     }
     private fun views(v:View):List<View> = listOf(v) + if(v is ViewGroup)(0 until v.childCount).flatMap{views(v.getChildAt(it))}else emptyList()
     @Test fun personalPriorityAndAccountIsolation() {
-        assertEquals("mx.charly.canal.personal", context.packageName)
+        assertEquals("mx.charly.canal.personal.v032", context.packageName)
         val first=Organization(context,-12345011)
         val other=Organization(context,-12345012)
         assertFalse(first.important(42))
@@ -65,6 +65,11 @@ class DeviceTest {
         assertFalse(other.important(42))
         assertEquals("canaldeck-important-42",ConnectionService.channel(42,true))
         assertNull(TelegramSession.current)
+    }
+    @Test fun portableBackupEncryptionOnAndroid() {
+        val pass="android-strong-passphrase".toCharArray()
+        val encrypted=OrganizationBackup.encrypt("test-backup-payload".toByteArray(),pass)
+        assertEquals("test-backup-payload",OrganizationBackup.decrypt(encrypted,pass).toString(Charsets.UTF_8))
     }
     @Test fun nativeDemoNavigationAndSyntheticScreenshot() {
         val i=InstrumentationRegistry.getInstrumentation()

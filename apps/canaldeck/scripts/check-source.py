@@ -19,8 +19,8 @@ print('PASS: notification reader absent; no contacts; protected dialogs; private
 
 # Personal build is intentionally a different Android identity and contains no Pick$ relay.
 settings=(root / 'build.gradle').read_text()
-assert "applicationId 'mx.charly.canal.personal'" in settings
-assert "versionName '0.3.1-personal-beta'" in settings
+assert "applicationId 'mx.charly.canal.personal.v032'" in settings
+assert "versionName '0.3.2-personal-beta'" in settings
 for file in (root / 'app/src/main/java').rglob('*.kt'):
     content=file.read_text()
     assert 'PICK_RELAY_REAL_ENABLED' not in content and 'PickBridgeRules' not in content, file
