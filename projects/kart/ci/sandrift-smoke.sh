@@ -10,11 +10,35 @@ alive(){ adb shell pidof "$PKG" >/dev/null 2>&1; }
 crashed(){ adb logcat -d -s AndroidRuntime:E | grep -q 'FATAL EXCEPTION'; }
 shot(){ adb exec-out screencap -p > "$OUT/$1.png"; }
 size(){ adb exec-out screencap -p > "$OUT/.probe.png"; python3 -c "import struct;b=open('$OUT/.probe.png','rb').read();print(*struct.unpack('>II',b[16:24]))"; }
-vtap(){ read -r PX PY < <(size); python3 -c "
+vtap(){ read -r PX PY < <(size); read -r X Y < <(python3 -c "
 px,py,vx,vy=$PX,$PY,$1,$2
 a=px/py
 W,H=(600*a,600.0) if a>=1000/600 else (1000.0,1000/a)
-print(int(vx/W*px),int(py-vy/H*py))" | { read -r X Y; adb shell input tap "$X" "$Y"; echo "tap $1,$2 -> $X,$Y ($PX x $PY)" >> "$OUT/taps.txt"; }; }
+print(int(vx/W*px),int(py-vy/H*py))")
+  # libGDX reads isTouched() once per frame and ignores a down+up that lands
+  # between frames. `input tap` is that instant, so INICIAR never fires on this
+  # emulator even when the pixel is the button centre. A stationary swipe holds
+  # the pointer across at least one frame. Coordinates stay in screencap space:
+  # the same space that dismissed Got it.
+  adb shell input swipe "$X" "$Y" "$X" "$Y" 900
+  echo "hold $1,$2 -> $X,$Y ($PX x $PY) 900ms" >> "$OUT/taps.txt"; }
+# Menu 'race' centre is virtual 325,88. One retry: a hitch longer than the hold
+# can still swallow a single press. The second press is the same real button.
+race_from_menu(){
+  local proof="$1" shotname="$2" ok="$3" bad="$4" crash="${5:-menu-tap-start-crash}"
+  adb logcat -c
+  vtap 325 88; sleep 8; shot "$shotname"
+  alive && ! crashed || fail "$crash"
+  adb logcat -d -s SandriftPerf:I > "$proof" || true
+  if ! grep -q 'SANDRIFT_PERF' "$proof"; then
+    echo "retry $bad" >> "$OUT/taps.txt"
+    adb logcat -c
+    vtap 325 88; sleep 8; shot "${shotname}-retry"
+    alive && ! crashed || fail "$crash"
+    adb logcat -d -s SandriftPerf:I > "$proof" || true
+  fi
+  grep -q 'SANDRIFT_PERF' "$proof" && pass "$ok" || fail "$bad"
+}
 
 adb shell input keyevent 82 || true
 adb install -r "$APK" > "$OUT/install.txt" && grep -q Success "$OUT/install.txt" && pass "install" || fail "install"
@@ -27,37 +51,53 @@ alive && ! crashed || fail "launch-menu"
 # First-run immersive-mode help is a system dialog; if not dismissed it obscures screenshots
 # and can consume BACK/controls. We must not accept a false green UI test behind that dialog.
 dismiss_immersive() {
+  local tag="${1:-menu}"
   adb shell uiautomator dump /sdcard/sandrift-window.xml >/dev/null 2>&1 || true
-  adb pull /sdcard/sandrift-window.xml "$OUT/window-before.xml" >/dev/null 2>&1 || true
-  if grep -Eq 'Viewing full screen|Got it' "$OUT/window-before.xml" 2>/dev/null; then
-    read -r PW PH < <(size)
-    adb shell input tap "$((PW*71/100))" "$((PH*48/100))"
+  adb pull /sdcard/sandrift-window.xml "$OUT/window-before-$tag.xml" >/dev/null 2>&1 || true
+  if grep -Eq 'Viewing full screen|Got it' "$OUT/window-before-$tag.xml" 2>/dev/null; then
+    # Click the real Got it bounds from the dump. A fixed percentage only matched
+    # this Pixel 6 landscape dialog by accident.
+    if ! python3 - "$OUT/window-before-$tag.xml" > "$OUT/immersive-tap-$tag.txt" <<'PY'
+import re, sys
+xml = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+for node in re.findall(r"<node\b[^>]*>", xml):
+    if "android:id/ok" in node or 'text="Got it"' in node:
+        m = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
+        if m:
+            x1, y1, x2, y2 = map(int, m.groups())
+            print((x1 + x2) // 2, (y1 + y2) // 2)
+            raise SystemExit(0)
+raise SystemExit(2)
+PY
+    then
+      read -r PW PH < <(size)
+      echo "$((PW*71/100)) $((PH*48/100))" > "$OUT/immersive-tap-$tag.txt"
+    fi
+    read -r GX GY < "$OUT/immersive-tap-$tag.txt"
+    echo "immersive-dismiss $tag -> $GX,$GY" >> "$OUT/taps.txt"
+    adb shell input tap "$GX" "$GY"
     sleep 2
     adb shell uiautomator dump /sdcard/sandrift-window.xml >/dev/null 2>&1 || true
-    adb pull /sdcard/sandrift-window.xml "$OUT/window-after.xml" >/dev/null 2>&1 || true
-    if grep -Eq 'Viewing full screen|Got it' "$OUT/window-after.xml" 2>/dev/null; then
-      fail "immersive-help-not-dismissed"
+    adb pull /sdcard/sandrift-window.xml "$OUT/window-after-$tag.xml" >/dev/null 2>&1 || true
+    if grep -Eq 'Viewing full screen|Got it' "$OUT/window-after-$tag.xml" 2>/dev/null; then
+      fail "immersive-help-not-dismissed-$tag"
     fi
-    pass "immersive-help-dismissed"
+    pass "immersive-help-dismissed-$tag"
   fi
 }
-dismiss_immersive
+dismiss_immersive menu
 pass "launch-menu"; shot 01-menu
 adb logcat -d -s SandriftPerf:I > "$OUT/menu-before-proof.txt" || true
 if grep -q 'SANDRIFT_PERF' "$OUT/menu-before-proof.txt"; then fail "menu-was-already-racing"; fi
 pass "initial-menu-idle-verified"
 
 # 2) Tap INICIAR through the real touch path (menu 'race' button centre = 325,88 virtual units).
-adb logcat -c
-vtap 325 88; sleep 8; shot 02-race-tap
-alive && ! crashed || fail "menu-tap-start-crash"
-adb logcat -d -s SandriftPerf:I > "$OUT/menu-race-proof.txt" || true
-grep -q 'SANDRIFT_PERF' "$OUT/menu-race-proof.txt" &&
-  pass "menu-tap-start-observed-race-loop" || fail "menu-tap-did-not-enter-race"
+race_from_menu "$OUT/menu-race-proof.txt" 02-race-tap menu-tap-start-observed-race-loop menu-tap-did-not-enter-race
 
 # 3) Synthetic race with automatic throttle (autostart extra) and steering/drift/item taps.
 adb shell am force-stop "$PKG"; adb logcat -c
 adb shell am start -W -n "$ACT" --es autostart race > "$OUT/launch-race.txt"; sleep 9; shot 03-race-start
+dismiss_immersive race
 for i in $(seq 1 6); do vtap 250 100; sleep .4; vtap 100 100; sleep .3; done
 vtap 129 235; sleep 6; shot 04-race-running
 alive && ! crashed && pass "race-running" || fail "race-running"
@@ -88,12 +128,8 @@ alive && ! crashed && pass "rotation" || fail "rotation"
 
 # 7) Second aspect ratio: 16:10 tablet-like surface.
 adb shell wm size 800x1280; sleep 3; adb shell am force-stop "$PKG"; adb shell am start -W -n "$ACT" > /dev/null; sleep 6; shot 08-menu-16x10
-adb logcat -c
-vtap 325 88; sleep 9; shot 09-race-16x10
-alive && ! crashed || fail "aspect-16x10-crash"
-adb logcat -d -s SandriftPerf:I > "$OUT/aspect-race-proof.txt" || true
-grep -q 'SANDRIFT_PERF' "$OUT/aspect-race-proof.txt" &&
-  pass "aspect-16x10-race-loop" || fail "aspect-16x10-no-race"
+dismiss_immersive aspect
+race_from_menu "$OUT/aspect-race-proof.txt" 09-race-16x10 aspect-16x10-race-loop aspect-16x10-no-race aspect-16x10-crash
 adb shell wm size reset; sleep 2
 
 # 8) Frame statistics measured by the game itself on this emulator (NOT a phone measurement).
