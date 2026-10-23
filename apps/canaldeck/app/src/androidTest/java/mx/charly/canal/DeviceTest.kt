@@ -55,6 +55,17 @@ class DeviceTest {
         assertEquals("", a.folder(999))
     }
     private fun views(v:View):List<View> = listOf(v) + if(v is ViewGroup)(0 until v.childCount).flatMap{views(v.getChildAt(it))}else emptyList()
+    @Test fun personalPriorityAndAccountIsolation() {
+        assertEquals("mx.charly.canal.personal", context.packageName)
+        val first=Organization(context,-12345011)
+        val other=Organization(context,-12345012)
+        assertFalse(first.important(42))
+        first.toggleImportant(42)
+        assertTrue(first.important(42))
+        assertFalse(other.important(42))
+        assertEquals("canaldeck-important-42",ConnectionService.channel(42,true))
+        assertNull(TelegramSession.current)
+    }
     @Test fun nativeDemoNavigationAndSyntheticScreenshot() {
         val i=InstrumentationRegistry.getInstrumentation()
         val a=i.startActivitySync(Intent(context,CanalActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as CanalActivity

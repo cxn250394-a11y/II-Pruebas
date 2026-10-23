@@ -16,3 +16,11 @@ for path in [root / 'app/src/main/java', root / 'ui/src/main/java']:
   s = f.read_text()
   assert not any(x in s for x in ['Super-Bet', 'RS1000', 'bot_token', 'BIND_NOTIFICATION_LISTENER_SERVICE', 'READ_CONTACTS']), f
 print('PASS: notification reader absent; no contacts; protected dialogs; private foreground service; backups disabled; isolated code')
+
+# Personal build is intentionally a different Android identity and contains no Pick$ relay.
+settings=(root / 'build.gradle').read_text()
+assert "applicationId 'mx.charly.canal.personal'" in settings
+assert "versionName '0.3.1-personal-beta'" in settings
+for file in (root / 'app/src/main/java').rglob('*.kt'):
+    content=file.read_text()
+    assert 'PICK_RELAY_REAL_ENABLED' not in content and 'PickBridgeRules' not in content, file

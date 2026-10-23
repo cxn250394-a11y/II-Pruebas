@@ -5,13 +5,20 @@ import java.util.Locale
 
 /** Independent UI models contain no credentials or Android objects. */
 data class ChatRow(val id: Long, val title: String, val preview: String, val date: Long,
-    val unread: Int, val kind: String, val favorite: Boolean = false, val folder: String = "")
+    val unread: Int, val kind: String, val favorite: Boolean = false, val folder: String = "",
+    val important: Boolean = false)
 enum class NoticeMode { OFF, ALL, KEYWORDS }
 object DeckRules {
     fun normalized(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFD)
         .replace(Regex("\\p{M}+"), "").lowercase(Locale.ROOT)
     fun validFolder(name: String) = name.trim().length in 1..40 && name.none { it.isISOControl() }
     fun validMessage(text: String) = text.isNotBlank() && text.length <= 4096
+    /** Age from Telegram's message timestamp to local notification request; not delivery latency. */
+    fun observedAgeMillis(serverSeconds: Long, deviceMillis: Long): Long? {
+        if (serverSeconds <= 0 || deviceMillis <= 0 || serverSeconds > Long.MAX_VALUE / 1000) return null
+        val age = deviceMillis - serverSeconds * 1000
+        return age.takeIf { it in 0..(24L * 60 * 60 * 1000) }
+    }
     fun clock(value: String): Int? {
         val m = Regex("^(\\d{2}):(\\d{2})$").matchEntire(value) ?: return null
         val h = m.groupValues[1].toInt(); val min = m.groupValues[2].toInt()
@@ -33,13 +40,15 @@ object DeckRules {
         val q = normalized(query.trim())
         val filtered = rows.filter {
             (folder == "*" || it.folder == folder) &&
-                (when (kind) { "all" -> true; "unread" -> it.unread > 0; "favorite" -> it.favorite; else -> it.kind == kind }) &&
+                (when (kind) { "all" -> true; "unread" -> it.unread > 0; "favorite" -> it.favorite;
+                    "important" -> it.important; "important-unread" -> it.important && it.unread > 0; else -> it.kind == kind }) &&
                 (q.isBlank() || normalized(it.title + " " + it.preview).contains(q))
         }
         return when (sort) {
             1 -> filtered.sortedWith(compareBy<ChatRow> { normalized(it.title) }.thenBy { it.id })
             2 -> filtered.sortedWith(compareByDescending<ChatRow> { it.unread }.thenByDescending { it.date }.thenBy { it.id })
-            else -> filtered.sortedWith(compareByDescending<ChatRow> { it.favorite }.thenByDescending { it.date }.thenBy { it.id })
+            else -> filtered.sortedWith(compareByDescending<ChatRow> { it.important }.thenByDescending { it.favorite }
+                .thenByDescending { it.date }.thenBy { it.id })
         }
     }
 }

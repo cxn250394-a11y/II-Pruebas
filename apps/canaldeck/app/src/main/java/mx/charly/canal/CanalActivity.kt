@@ -120,7 +120,7 @@ class CanalActivity : Screen() {
         },LinearLayout.LayoutParams(0,-2,1f))};root.addView(n)
     }
     private fun home(){
-        page("home","CanalDeck","Tu Telegram, organizado a tu manera · beta 0.2")
+        page("home","CanalDeck","Tu Telegram y tus canales · Personal 0.3.1")
         card("Tus canales, sin perder lo nuevo","Cliente propio con TDLib. Una cuenta real, carpetas locales, favoritos, lectura de canales y mensajes de texto. No es la aplicación Nicegram ni una app oficial de Telegram.")
         statusLabel=label(TelegramSession.current?.let{if(it.ready)"${it.accountName} · ${it.network}" else it.status} ?: "Sin sesión iniciada",15f,accent)
         button(if(TelegramSession.current?.ready==true)"Abrir mis conversaciones" else "Empezar · conectar mi cuenta",true){demo=false;if(TelegramSession.current?.ready==true)chats()else connect()}
@@ -189,7 +189,7 @@ class CanalActivity : Screen() {
         button("Actualizar estado"){login()};button("Volver"){home()}
     }
     private fun sampleRows()=listOf(
-        ChatRow(-1,"Noticias del día","Nueva publicación del canal de ejemplo",System.currentTimeMillis()/1000,5,"channel",true),
+        ChatRow(-1,"Noticias del día","Nueva publicación del canal de ejemplo",System.currentTimeMillis()/1000,5,"channel",true,important=true),
         ChatRow(-2,"Amigos","¿Cómo va tu día?",System.currentTimeMillis()/1000-80,2,"group"),
         ChatRow(-3,"Música","Un nuevo álbum para escuchar",System.currentTimeMillis()/1000-180,0,"channel"),
         ChatRow(-4,"Deportes","Una actualización de ejemplo",System.currentTimeMillis()/1000-240,12,"channel"),
@@ -199,8 +199,8 @@ class CanalActivity : Screen() {
         if(!demo&&TelegramSession.current?.ready!=true){login();return}
         linearPage("list",if(demo)"CanalDeck · DEMO" else "CanalDeck",if(demo)"Ejemplos ficticios · no hay cuenta conectada" else "Carpetas y favoritos exclusivos de este cliente")
         statusLabel=label(if(demo)"Modo de ejemplo" else "${TelegramSession.current?.accountName} · ${TelegramSession.current?.network}",12f,accent)
-        val kinds=listOf("all","channel","group","private","unread","favorite")
-        menu(listOf("Todos","Canales","Grupos","Privados","No leídos","Favoritos"),kinds.indexOf(kind).coerceAtLeast(0)){kind=kinds[it];refreshChats()}
+        val kinds=listOf("all","channel","group","private","unread","favorite","important","important-unread")
+        menu(listOf("Todos","Canales","Grupos","Privados","No leídos","Favoritos","Prioritarios","Prioritarios nuevos"),kinds.indexOf(kind).coerceAtLeast(0)){kind=kinds[it];refreshChats()}
         val input=field("Buscar chats, canales o último mensaje",query)
         input.addTextChangedListener(object:android.text.TextWatcher{
             override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
@@ -214,7 +214,7 @@ class CanalActivity : Screen() {
         chatsList=ListView(this).apply{divider=null;dividerHeight=dp(8);adapter=chatAdapter;clipToPadding=false}
         body.addView(chatsList,LinearLayout.LayoutParams(-1,0,1f))
         val actions=row()
-        actions.addView(Button(this).apply{text="Ordenar";isAllCaps=false;setOnClickListener{dialog().setTitle("Orden de conversaciones").setSingleChoiceItems(arrayOf("Favoritos y recientes","Nombre","Más no leídos"),sort){d,n->sort=n;d.dismiss();refreshChats()}.show()}},LinearLayout.LayoutParams(0,-2,1f))
+        actions.addView(Button(this).apply{text="Ordenar";isAllCaps=false;setOnClickListener{dialog().setTitle("Orden de conversaciones").setSingleChoiceItems(arrayOf("Prioritarios, favoritos y recientes","Nombre","Más no leídos"),sort){d,n->sort=n;d.dismiss();refreshChats()}.show()}},LinearLayout.LayoutParams(0,-2,1f))
         actions.addView(Button(this).apply{text=if(demo)"Salir del demo" else "Cargar más";isAllCaps=false;setOnClickListener{if(demo){demo=false;home()}else{limit=(limit+200).coerceAtMost(1000);TelegramSession.current?.refresh(limit);toast("Solicitada carga de hasta $limit conversaciones")}}},LinearLayout.LayoutParams(0,-2,1f))
         body.addView(actions);nav();refreshChats()
     }
@@ -222,7 +222,7 @@ class CanalActivity : Screen() {
         if(screen!="list"||chatsList==null)return
         val all=if(demo)sampleRows()else TelegramSession.current?.chats?.values.orEmpty().map{c->
             val type=when(val t=c.type){is ChatTypeSupergroup->if(t.isChannel)"channel"else"group";is ChatTypeBasicGroup->"group";else->"private"}
-            ChatRow(c.id,c.title,TelegramSession.preview(c.lastMessage?.content),c.lastMessage?.date?.toLong()?:0,c.unreadCount,type,org.favorite(c.id),org.folder(c.id))
+            ChatRow(c.id,c.title,TelegramSession.preview(c.lastMessage?.content),c.lastMessage?.date?.toLong()?:0,c.unreadCount,type,org.favorite(c.id),org.folder(c.id),org.important(c.id))
         }
         rows=DeckRules.filter(all,query,kind,folder,sort)
         countLabel?.text=if(rows.isEmpty())"Sin coincidencias. Cambia filtros o carga conversaciones." else "${rows.size} conversaciones · mantén pulsada una para organizar"
@@ -234,9 +234,9 @@ class CanalActivity : Screen() {
         override fun getItemId(p:Int)=rows[p].id
         override fun getView(p:Int,recycled:View?,parent:ViewGroup?):View{
             val c=rows[p];val box=column().apply{setPadding(dp(15),dp(10),dp(15),dp(10));background=GradientDrawable().apply{setColor(Color.rgb(23,36,53));cornerRadius=dp(16).toFloat()}}
-            box.addView(text((if(c.favorite)"★  " else "")+c.title,17f,Color.WHITE,true).apply{maxLines=1;ellipsize=TextUtils.TruncateAt.END})
+            box.addView(text((if(c.important)"●  " else "")+(if(c.favorite)"★  " else "")+c.title,17f,Color.WHITE,true).apply{maxLines=1;ellipsize=TextUtils.TruncateAt.END})
             box.addView(text(c.preview.ifBlank{"Sin mensaje reciente"},13f,soft).apply{maxLines=2;ellipsize=TextUtils.TruncateAt.END})
-            box.addView(text("${when(c.kind){"channel"->"CANAL";"group"->"GRUPO";else->"PRIVADO"}}  ·  ${c.unread} no leídos",11f,if(c.unread>0)accent else soft))
+            box.addView(text("${when(c.kind){"channel"->"CANAL";"group"->"GRUPO";else->"PRIVADO"}}  ·  ${c.unread} no leídos${if(c.important)" · PRIORIDAD"else""}",11f,if(c.important||c.unread>0)accent else soft))
             box.isFocusable=true;box.setOnClickListener{if(demo)toast("Este es un ejemplo. Conecta tu cuenta para abrir mensajes reales.")else openChat(c.id)}
             box.setOnLongClickListener{if(demo)toast("Las acciones reales se activan al conectar tu cuenta")else organize(c.id);true};return box
         }
@@ -258,9 +258,12 @@ class CanalActivity : Screen() {
     private fun organize(id:Long){
         if(TelegramSession.current?.ready!=true)return
         dialog().setTitle(TelegramSession.current?.chats?.get(id)?.title ?: "Organizar")
-            .setItems(arrayOf(if(org.favorite(id))"Quitar favorito"else"Marcar favorito","Mover a carpeta","Configurar avisos de este chat")){_,i->when(i){
+            .setItems(arrayOf(if(org.favorite(id))"Quitar favorito"else"Marcar favorito",
+                if(org.important(id))"Quitar prioridad"else"Prioridad: arriba y aviso destacado",
+                "Mover a carpeta","Configurar avisos de este chat")){_,i->when(i){
                 0->{org.toggleFavorite(id);refreshChats()}
-                1->{val fs=listOf("" to "Sin carpeta")+org.folders();dialog().setTitle("Carpeta local").setItems(fs.map{it.second}.toTypedArray()){_,n->org.assign(id,fs[n].first);refreshChats()}.setNegativeButton("Cancelar",null).show()}
+                1->{org.toggleImportant(id);ConnectionService.current?.clear(id);refreshChats()}
+                2->{val fs=listOf("" to "Sin carpeta")+org.folders();dialog().setTitle("Carpeta local").setItems(fs.map{it.second}.toTypedArray()){_,n->org.assign(id,fs[n].first);refreshChats()}.setNegativeButton("Cancelar",null).show()}
                 else->noticeSettings(id)
             }}.show()
     }
@@ -277,7 +280,7 @@ class CanalActivity : Screen() {
                 if(mode!=NoticeMode.OFF&&Build.VERSION.SDK_INT>=33)requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),9)
                 toast("Preferencias guardadas")
             }.setNeutralButton("Sonido Android"){_,_->
-                val i=Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName).putExtra(Settings.EXTRA_CHANNEL_ID,ConnectionService.channel(id))
+                val i=Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName).putExtra(Settings.EXTRA_CHANNEL_ID,ConnectionService.channel(id,org.important(id)))
                 try{startActivity(i)}catch(_:Exception){toast("El canal de Android aparece después de su primer aviso")}
             }.show()
     }
@@ -287,6 +290,9 @@ class CanalActivity : Screen() {
         statusLabel=label(s?.let{if(it.ready)"${it.accountName} · ${it.network}"else it.status} ?: "Sin conexión",15f,accent)
         if(s?.ready==true&&!demo){
             label("Notificaciones de CanalDeck",18f)
+            val age=org.lastLocalNoticeAgeMillis()
+            val timing=if(age==null)"Sin observaciones recientes" else "Último aviso solicitado: ${age/1000} s desde la fecha del mensaje · medición local aproximada"
+            label("Diagnóstico: $timing. No mide cuándo Android mostró el banner ni garantiza puntualidad.",12f,soft)
             body.addView(Switch(this).apply{text="Mostrar texto en los avisos";setTextColor(Color.WHITE);isChecked=org.previews;minHeight=dp(48);setOnCheckedChangeListener{_,v->org.previews=v;ConnectionService.current?.clearAll()}})
             body.addView(Switch(this).apply{text="Horario silencioso";setTextColor(Color.WHITE);isChecked=org.quietEnabled;minHeight=dp(48);setOnCheckedChangeListener{_,v->org.quietEnabled=v}})
             fun time(n:Int)=String.format(Locale.ROOT,"%02d:%02d",n/60,n%60)
@@ -296,12 +302,13 @@ class CanalActivity : Screen() {
             button("Borrar los avisos actuales de CanalDeck"){ConnectionService.current?.clearAll()}
         }
         button("Permisos y notificaciones de Android"){try{startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName))}catch(_:Exception){toast("Revisa CanalDeck en Ajustes de Android")}}
+        label("Mantén pulsado un chat → Prioridad para verlo arriba; puedes filtrar solo prioritarios. Prioridad NO activa avisos apagados. Los avisos normales y prioritarios usan grupos Android separados; el sistema puede seguir agrupándolos.",13f,soft)
         label("Para activar un canal: mantén pulsado el chat → Configurar avisos. Todos empiezan apagados. La vista previa está oculta de fábrica.",13f,soft)
         card("Conexión visible, no garantía de entrega instantánea","No hay Firebase/FCM configurado. Esta beta usa una conexión visible en segundo plano; HyperOS puede cerrarla o retrasarla. No reemplaza todavía las alertas del cliente oficial.")
         if(s!=null){button("Desconectar CanalDeck"){stopService(Intent(this,ConnectionService::class.java));home()};button("Cerrar únicamente esta sesión"){confirm("Cerrar sesión","Cierra CanalDeck en Telegram; no cierra Telegram oficial ni Nicegram. Tus carpetas locales siguen separadas por cuenta."){drafts.clear();ConnectionService.current?.clearAll();s.logout();home()}}}
         else button("Conectar mi cuenta",true){demo=false;connect()}
         button("Ayuda de activación"){guide()}
-        button("Licencias y alcance"){dialog().setTitle("CanalDeck 0.2 beta").setMessage("Cliente independiente, no afiliado a Nicegram ni Telegram. TDLib: Boost 1.0. TDL Coroutines y Kotlin Coroutines: Apache 2.0. Licencias incluidas en assets. Una cuenta. Sin llamadas, chats secretos, exportación de contenido protegido ni pagos. La beta usa firma de prueba y no ha validado tu cuenta real.").setPositiveButton("Cerrar",null).show()}
+        button("Licencias y alcance"){dialog().setTitle("CanalDeck Personal 0.3.1 beta").setMessage("Cliente independiente, no afiliado a Nicegram ni Telegram. TDLib: Boost 1.0. TDL Coroutines y Kotlin Coroutines: Apache 2.0. Licencias incluidas en assets. Una cuenta. Sin llamadas, chats secretos, exportación de contenido protegido ni pagos. La beta usa firma de prueba y no ha validado tu cuenta real.").setPositiveButton("Cerrar",null).show()}
         nav()
     }
     private fun openChat(id:Long){
