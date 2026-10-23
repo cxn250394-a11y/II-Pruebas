@@ -43,6 +43,9 @@ dismiss_immersive() {
 }
 dismiss_immersive
 pass "launch-menu"; shot 01-menu
+adb logcat -d -s SandriftPerf:I > "$OUT/menu-before-proof.txt" || true
+if grep -q 'SANDRIFT_PERF' "$OUT/menu-before-proof.txt"; then fail "menu-was-already-racing"; fi
+pass "initial-menu-idle-verified"
 
 # 2) Tap INICIAR through the real touch path (menu 'race' button centre = 325,88 virtual units).
 adb logcat -c
