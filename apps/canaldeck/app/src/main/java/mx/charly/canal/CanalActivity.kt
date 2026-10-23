@@ -481,9 +481,35 @@ class CanalActivity : Screen() {
         dialog().setTitle("Mensaje").setItems(actions.toTypedArray()){_,n->when(actions[n]){
             "Ver texto completo"->{val t=text(TelegramSession.preview(m.content),15f).apply{setPadding(dp(18),dp(12),dp(18),dp(12))};dialog().setView(ScrollView(this).apply{addView(t)}).setPositiveButton("Cerrar",null).show()}
             "Responder con texto"->{reply=m;replyLabel?.text="Respuesta: ${TelegramSession.preview(m.content).take(80)} · tocar para quitar";composer?.requestFocus()}
-            "Abrir enlace"->dialog().setTitle("Enlace externo").setItems(links.toTypedArray()){_,i->confirm("Abrir navegador",links[i]){website(links[i])}}.show()
+            "Abrir enlace"->dialog().setTitle("Abrir enlace").setItems(links.toTypedArray()){_,i->openTelegramLink(links[i])}.show()
             else->playMedia(m)
         }}.show()
+    }
+    private fun openTelegramLink(link:String) {
+        val parsed=MessageLinks.public(link)
+        val session=TelegramSession.current
+        if(parsed!=null && session?.ready==true){
+            toast("Abriendo enlace público dentro de CanalDeck…")
+            session.resolvePublicLink(parsed.username,parsed.messageId){chatId,error->
+                if(isDestroyed||!foreground||TelegramSession.current!==session)return@resolvePublicLink
+                if(chatId==null){toast(error ?: "No se encontró el canal desde tu cuenta");return@resolvePublicLink}
+                demo=false;openChat(chatId)
+                val message=parsed.messageId
+                if(message!=null)session.fetchLinkedMessage(chatId,message){m->
+                    if(!isDestroyed&&foreground&&screen=="history"&&activeChat==chatId){
+                        if(m==null)toast("Conversación abierta. Esa publicación no está disponible.")
+                        else dialog().setTitle("Publicación dentro de CanalDeck")
+                            .setMessage(TelegramSession.preview(m.content).take(9000))
+                            .setPositiveButton("Cerrar",null).show()
+                    }
+                }
+            }
+        }else{
+            val reason=if(parsed==null)"El enlace no es un canal público compatible o es una invitación privada."else"No hay una sesión conectada."
+            dialog().setTitle("Abrir fuera de CanalDeck")
+                .setMessage("$reason No se enviará nada automáticamente. ¿Quieres abrirlo fuera de esta app?")
+                .setNegativeButton("Cancelar",null).setPositiveButton("Abrir externamente"){_,_->website(link)}.show()
+        }
     }
     private fun playMedia(m:Message){
         if(m.selfDestructType!=null){toast("El contenido de autodestrucción no está implementado en esta beta");return}
