@@ -112,6 +112,42 @@ class StatsActivity:Screen(){
    }catch(e:Exception){runOnUiThread{busy=false;if(!isDestroyed)toast(e.message?:"Sin catálogo")}}}
   };button("Volver"){home()}
  }
+ private fun exportCsv(){
+   if(matches.isEmpty()){toast("No hay partidos en esta muestra para exportar");return}
+   try{
+     startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+       addCategory(Intent.CATEGORY_OPENABLE)
+       type="text/csv"
+       putExtra(Intent.EXTRA_TITLE,"statsdeck-"+league+"-"+season+"-muestra.csv")
+     },12)
+   }catch(_:Exception){toast("No se pudo abrir el selector de archivos")}
+ }
+ private fun watchScreen(){
+   layout("Mis seguidos","Marcadores observados en tus actualizaciones · sin push automático")
+   button("Volver"){home()}
+   val current=scope()
+   val teamNames=watch.teams(current).sorted()
+   val matchIds=watch.matches(current).sorted()
+   card("Equipos seguidos ("+teamNames.size+")",
+      teamNames.joinToString("\n").ifBlank{"Ninguno: abre Estadísticas por equipo y marca ★ Seguir."})
+   card("Partidos seguidos ("+matchIds.size+")",
+      matchIds.joinToString(", ").ifBlank{"Ninguno: abre un partido y marca ★ Seguir."})
+   button("Ver solo mis seguidos"){onlyFollowed=true;home()}
+   button("Actualizar y comprobar cambios",true){refresh()}
+   label("La primera consulta no inventa cambios. No son goles confirmados ni avisos con la app cerrada.",12f,soft)
+   val records=try{changes.all(current).take(60)}catch(_:Exception){
+     label("El historial no está legible y se conservará sin sobrescribirse.",12f,soft);return
+   }
+   if(records.isEmpty())card("Todavía no hay cambios","Después de seguir equipos o partidos, actualiza la misma liga y temporada otra vez para comparar observaciones.")
+   records.forEach { record->
+     val e=record.change
+     val before=StatsWatch.score(e.beforeHome,e.beforeAway)
+     val after=StatsWatch.score(e.afterHome,e.afterAway)
+     card(e.home+" vs "+e.away+" · "+e.kind.label,
+        before+" → "+after+"\nObservado: "+whenText(record.observedAt)+
+        "\nFuente: "+record.source+". No confirma goles, tarjetas ni córners.")
+   }
+ }
  private fun teams(){layout("Forma de equipos","Solo partidos finalizados con marcador disponible")
   button("Volver"){home()};val names=matches.flatMap{listOf(it.home,it.away)}.distinct().sorted()
   if(names.isEmpty()){label("Descarga una liga primero");return}
@@ -140,7 +176,20 @@ class StatsActivity:Screen(){
   val h2h=matches.filter{it.validFinal&&setOf(it.home,it.away)==setOf(m.home,m.away)}
   card("Enfrentamientos en esta muestra: ${h2h.size}",h2h.joinToString("\n"){"${it.home} ${it.homeGoals}-${it.awayGoals} ${it.away}"}.ifBlank{"No hay historial suficiente"})
  }
- @Deprecated("Activity compatibility") override fun onActivityResult(request:Int,result:Int,data:Intent?){super.onActivityResult(request,result,data);if(request!=11||result!=RESULT_OK)return;val uri=data?.data?:return
+ @Deprecated("Activity compatibility") override fun onActivityResult(request:Int,result:Int,data:Intent?){
+   super.onActivityResult(request,result,data)
+   if(result!=RESULT_OK)return
+   if(request==12) {
+     val uri=data?.data?:return
+     try{
+       val output=MatchExport.csv(matches).toByteArray(Charsets.UTF_8)
+       contentResolver.openOutputStream(uri,"w")?.use{it.write(output)} ?: error("El archivo no está disponible")
+       toast("CSV exportado. Son observaciones de la fuente, no datos verificados independientemente.")
+     }catch(_:Exception){toast("No se pudo guardar el CSV. La muestra local se conserva.")}
+     return
+   }
+   if(request!=11)return
+   val uri=data?.data?:return
   try{val rows=contentResolver.openInputStream(uri)!!.use{Csv.parse(String(Streams.readLimited(it,2_000_000),Charsets.UTF_8))};val converted=JSONArray()
    rows.forEach{r->val id=r["id"]?.toLongOrNull()?:error("Falta id numérico");val h=r["home"].orEmpty();val a=r["away"].orEmpty();val hg=r["home_goals"]?.toIntOrNull();val ag=r["away_goals"]?.toIntOrNull();val date=r["date_utc"].orEmpty();require(h.isNotBlank()&&a.isNotBlank()&&hg!=null&&ag!=null&&hg>=0&&ag>=0);Instant.parse(date)
     converted.put(JSONObject().put("matchID",id).put("team1",JSONObject().put("teamName",h)).put("team2",JSONObject().put("teamName",a)).put("matchIsFinished",true).put("matchDateTimeUTC",date).put("matchResults",JSONArray().put(JSONObject().put("resultTypeID",2).put("pointsTeam1",hg).put("pointsTeam2",ag))))
