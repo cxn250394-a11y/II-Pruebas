@@ -21,6 +21,7 @@ class AudioActivity:Screen(){
  private var controller:MediaController?=null
  private var future:com.google.common.util.concurrent.ListenableFuture<MediaController>?=null
  private val saved by lazy{LocalJson(this,"library.json")};private var library=JSONArray();private var healthy=true
+ private val radioFavorites by lazy { RadioFavorites(this) }
  private val handler=Handler(Looper.getMainLooper());private val io=Executors.newSingleThreadExecutor()
  private lateinit var usb:UsbWave;private var statusView:TextView?=null;private var seek:SeekBar?=null;private var usbStatus="WAV USB experimental: no iniciado";private var screen="home"
  private val ticker=object:Runnable{override fun run(){val p=controller;statusView?.text=(p?.mediaMetadata?.title?.toString()?:"Sin pista")+"\n"+(if(p?.isPlaying==true)"Reproduciendo" else "En pausa")+" · ${minutes(p?.currentPosition?:0)}\n"+AudioService.sourceInfo
@@ -40,7 +41,12 @@ class AudioActivity:Screen(){
   button("Anterior"){usb.stop();controller?.seekToPreviousMediaItem()};button("Siguiente"){usb.stop();controller?.seekToNextMediaItem()}
   button("Aleatorio: cambiar"){controller?.let{it.shuffleModeEnabled=!it.shuffleModeEnabled;toast(if(it.shuffleModeEnabled)"Aleatorio activado" else "Orden normal")}}
   button("Repetir: cambiar"){controller?.let{it.repeatMode=(it.repeatMode+1)%3;toast(listOf("Sin repetición","Repetir pista","Repetir cola")[it.repeatMode])}}
-  button("Biblioteca local (${library.length()})"){libraryScreen()};button("Radio por Internet"){radio()};button("USB / bit-perfect experimental"){usbScreen()};button("TIDAL y Qobuz: estado de integración"){providers()}
+  button("Biblioteca local (${library.length()})"){libraryScreen()}
+  button("Radio por Internet · guardar favoritas"){radio()}
+  button("Mis emisoras favoritas"){favoritesRadio()}
+  button("Temporizador de apagado"){sleepScreen()}
+  button("USB / bit-perfect experimental"){usbScreen()}
+  button("TIDAL y Qobuz: estado de integración"){providers()}
   label("Reproducción normal usa Media3 / Android. No confundir calidad del archivo con señal de salida bit-perfect.",12f,soft)
  }
  private fun libraryScreen(){screen="library";base("Tu biblioteca","Archivos elegidos por ti; sin permiso de almacenamiento global")
@@ -52,7 +58,7 @@ class AudioActivity:Screen(){
  private fun pick(code:Int){startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply{type="audio/*";addCategory(Intent.CATEGORY_OPENABLE);if(code==20)putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true)},code)}
  private fun item(o:JSONObject)=MediaItem.Builder().setMediaId(o.getString("uri")).setUri(o.getString("uri")).setMediaMetadata(MediaMetadata.Builder().setTitle(o.getString("title")).build()).build()
  private fun playLibrary(index:Int){val p=controller?:run{toast("Espera a que conecte el servicio de audio");return};usb.stop();p.setMediaItems((0 until library.length()).map{item(library.getJSONObject(it))},index,0);p.prepare();p.play();home()}
- private fun playUrl(name:String,url:String){val uri=Uri.parse(url);if(uri.scheme!="https"||uri.host.isNullOrBlank()||uri.userInfo!=null){toast("Solo streams HTTPS sin credenciales en URL");return};usb.stop();val p=controller?:return;p.setMediaItem(MediaItem.Builder().setUri(uri).setMediaMetadata(MediaMetadata.Builder().setTitle(name).build()).build());p.prepare();p.play();home()}
+ private fun playUrl(name:String,url:String){val uri=Uri.parse(url);if(!RadioFavorites.validStream(url)){toast("Solo streams HTTPS sin credenciales en URL");return};usb.stop();val p=controller?:return;p.setMediaItem(MediaItem.Builder().setUri(uri).setMediaMetadata(MediaMetadata.Builder().setTitle(name).build()).build());p.prepare();p.play();home()}
  @Deprecated("Activity compatibility") override fun onActivityResult(request:Int,result:Int,data:Intent?){super.onActivityResult(request,result,data);if(result!=RESULT_OK||data==null)return
   if(request==21){val uri=data.data?:return;confirm("Prueba USB bit-perfect","Solo WAV PCM16/24/32. Baja el volumen en tu DAC antes de probar: esta ruta no atenúa digitalmente. Se detiene al salir de la app y no cambia deliberadamente al altavoz si falla."){controller?.pause();usbScreen();usb.play(uri)};return}
   if(request!=20||!healthy)return
@@ -67,15 +73,52 @@ class AudioActivity:Screen(){
   }catch(_:Exception){toast("No se pudo conservar acceso a todos los archivos; biblioteca anterior intacta")}
  }
  private fun radio(){screen="radio";base("Radio por Internet","Directorio Radio Browser · solo streams HTTPS")
-  button("Volver"){home()};val name=field("Buscar estación","México");val results=column();body.addView(results)
+  button("Volver"){home()};button("★ Mis emisoras guardadas"){favoritesRadio()}
+  val name=field("Buscar estación","México");val results=column();body.addView(results)
   button("Buscar",true){val q=name.text.toString();io.execute{try{val data=RadioDirectory.search(q);runOnUiThread{if(!isDestroyed&&screen=="radio"){
    results.removeAllViews();var count=0
    for(i in 0 until data.length()){val o=data.getJSONObject(i);val url=o.optString("url_resolved");if(!url.startsWith("https://"))continue;count++
-    results.addView(android.widget.Button(this).apply{text=o.optString("name")+" · "+o.optString("codec")+" "+o.optInt("bitrate")+" kbps";isAllCaps=false;setOnClickListener{playUrl(o.optString("name"),url)}})
+    val station=FavoriteStation(o.optString("name").take(80),url,o.optString("codec"),o.optInt("bitrate"))
+    results.addView(android.widget.Button(this).apply{text="▶ "+station.name+" · "+station.codec+" "+station.bitrate+" kbps (declarados)";isAllCaps=false;setOnClickListener{playUrl(station.name,station.url)}})
+    results.addView(android.widget.Button(this).apply{text="★ Guardar emisora";isAllCaps=false;setOnClickListener{
+        try{toast(if(radioFavorites.add(station))"Emisora guardada"else"Ya está guardada o alcanzaste el límite")}
+        catch(_:Exception){toast("No se pudo guardar: conserva los datos anteriores")}
+    }})
    };if(count==0)results.addView(text("Sin streams HTTPS en esta búsqueda",14f,soft))
   }}}catch(e:Exception){runOnUiThread{if(!isDestroyed)toast(e.message?:"No respondió el directorio")}}}}
   button("Agregar URL HTTPS manual"){prompt("URL del stream autorizado"){url->playUrl("Radio manual",url.trim())}}
   label("La disponibilidad y los metadatos dependen de cada emisora. No se descargan ni redistribuyen sus emisiones.",12f,soft)
+ }
+ private fun favoritesRadio(){
+  screen="favorite-radio";base("Mis emisoras","Guardadas únicamente en el teléfono · máximo 300")
+  button("Volver a Radio"){radio()}
+  val stations=try{radioFavorites.all()}catch(_:Exception){toast("Los favoritos no se pueden leer; no se borrarán");return}
+  if(stations.isEmpty())card("Sin favoritas","Busca una estación en Radio por Internet y toca «Guardar emisora».")
+  stations.forEach { station->
+   card(station.name,if(station.bitrate>0)"${station.codec} · ${station.bitrate} kbps declarados por el directorio"else"Calidad no informada")
+   button("▶ Escuchar · ${station.name.take(40)}"){playUrl(station.name,station.url)}
+   button("Quitar de favoritas · ${station.name.take(40)}"){
+    confirm("Quitar emisora",station.name+" seguirá disponible en el directorio.") {
+      try{radioFavorites.remove(station.url);favoritesRadio()}catch(_:Exception){toast("No se pudo actualizar la lista")}
+    }
+   }
+  }
+ }
+ private fun sleepScreen(){
+  screen="sleep";base("Temporizador","Pausa música y radio automáticamente")
+  val remaining=AudioService.remainingSleepMillis()
+  card("Estado",if(remaining>0)"Apagado automático en aproximadamente ${(remaining+59_999)/60_000} minutos"else"Temporizador desactivado")
+  button("Volver"){home()}
+  listOf(15,30,45,60,90,120,0).forEach{minutes->
+   button(if(minutes==0)"Desactivar temporizador"else"Apagar en $minutes minutos"){
+    try{
+     startService(Intent(this,AudioService::class.java).setAction(AudioService.ACTION_SLEEP_TIMER)
+      .putExtra(AudioService.EXTRA_MINUTES,minutes))
+     sleepScreen()
+    }catch(_:Exception){toast("Android no permitió activar el temporizador")}
+   }
+  }
+  label("El temporizador vive en el servicio de audio. Si HyperOS termina el proceso, puede no ejecutarse. No modifica las canciones ni sus archivos.",12f,soft)
  }
  private fun usbScreen(){screen="usb";base("Salida USB","Prueba explícita; nunca simula una certificación")
   button("Volver"){usb.stop();home()};card("Estado",usbStatus)
