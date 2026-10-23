@@ -18,6 +18,10 @@ class StatsActivity:Screen(){
  private val io=Executors.newSingleThreadExecutor()
  private val prefs by lazy{getSharedPreferences("stats",MODE_PRIVATE)}
  private val cache by lazy{LocalJson(this,"matches.json")}
+ private val watch by lazy{WatchPrefs(this)}
+ private val changes by lazy{WatchHistory(this)}
+ private var onlyFollowed=false
+ private fun scope()=StatsWatch.scope(league,season)
  private var raw=JSONArray();private var matches=emptyList<Match>();private var query="";private var page=0;private var busy=false
  private var league="bl1";private var season=java.time.LocalDate.now().year
  private var fetched=0L;private var importSource="OpenLigaDB";private var renderedList:android.widget.LinearLayout?=null
@@ -30,8 +34,14 @@ class StatsActivity:Screen(){
   renderedList=null
   card("${league.uppercase()} · temporada $season","Fuente: $importSource\nÚltima descarga: ${if(fetched>0)whenText(fetched) else "todavía no se ha descargado"}\nDatos comunitarios; pueden estar incompletos o retrasados. No son cuotas de apuestas.")
   button(if(busy)"Descarga en curso" else "Actualizar partidos",true){refresh()}
-  button("Elegir liga / temporada"){choose()};button("Estadísticas por equipo"){teams()};button("Importar resultados CSV"){startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply{type="*/*";addCategory(Intent.CATEGORY_OPENABLE)},11)}
+  button("Elegir liga / temporada"){choose()}
+  button("Estadísticas por equipo"){teams()}
+  button("Seguidos y cambios observados"){watchScreen()}
+  button(if(onlyFollowed)"Mostrar todos los partidos"else"Ver solo mis seguidos"){onlyFollowed=!onlyFollowed;home()}
+  button("Exportar muestra CSV"){exportCsv()}
+  button("Importar resultados CSV"){startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply{type="*/*";addCategory(Intent.CATEGORY_OPENABLE)},11)}
   label("Córners, tarjetas y tiros: N/D en esta fuente. Nunca se sustituyen por ceros.",12f,soft)
+  label("Los cambios de marcador solo se registran al pulsar Actualizar. No equivalen a goles confirmados ni avisos en segundo plano.",12f,soft)
   val search=field("Buscar equipo",query)
   search.addTextChangedListener(object:TextWatcher{override fun beforeTextChanged(s:CharSequence?,st:Int,c:Int,a:Int){};override fun afterTextChanged(s:Editable?){};override fun onTextChanged(s:CharSequence?,st:Int,b:Int,c:Int){query=s.toString();page=0;renderMatches()}})
   renderedList=column();body.addView(renderedList);renderMatches()
@@ -40,7 +50,11 @@ class StatsActivity:Screen(){
  }
  private fun renderMatches(){val holder=renderedList?:return;holder.removeAllViews()
   val now=System.currentTimeMillis()
-  val filtered=matches.filter{query.isBlank()||(it.home+" "+it.away).contains(query,true)}.sortedBy{kotlin.math.abs(it.whenMs-now)}
+  val currentScope=scope()
+  val filtered=matches.filter{m->
+     (!onlyFollowed || watch.isTracked(currentScope,m)) &&
+       (query.isBlank()||(m.home+" "+m.away).contains(query,true))
+  }.sortedBy{kotlin.math.abs(it.whenMs-now)}
   val visible=filtered.take((page+1)*40)
   holder.addView(text("${filtered.size} partidos · ${visible.size} visibles",12f,accent))
   if(filtered.isEmpty())holder.addView(text("No hay partidos para mostrar. Actualiza una liga o importa resultados.",14f,soft))
@@ -72,13 +86,21 @@ class StatsActivity:Screen(){
   var chosen=names.first();menu(names){chosen=names[it]};button("Analizar últimos 10",true){team(chosen)}
  }
  private fun team(name:String){layout(name,"Últimos 10 finalizados de la muestra local")
-  button("Volver a equipos"){teams()};val f=Stats.form(matches,name)
+  button("Volver a equipos"){teams()}
+  button(if(StatsWatch.teamKey(name) in watch.teams(scope()))"Dejar de seguir equipo" else "★ Seguir este equipo"){
+    watch.toggleTeam(scope(),name);team(name)
+  }
+  val f=Stats.form(matches,name)
   card("${f.played} partidos analizados","Ganados ${f.won} · empatados ${f.drawn} · perdidos ${f.lost}\nGoles a favor ${f.scored} · en contra ${f.conceded}")
   if(f.played>0){card("Distribución observada","Ambos anotaron: ${f.bothScored}/${f.played}\nMás de 2.5 goles: ${f.over25}/${f.played}\nEstas frecuencias NO son probabilidades de un próximo partido.")}
   matches.filter{it.validFinal&&(it.home==name||it.away==name)}.sortedByDescending{it.whenMs}.take(10).forEach{m->card("${m.home} ${m.homeGoals}-${m.awayGoals} ${m.away}",whenText(m.whenMs)){detail(m)}}
  }
  private fun detail(m:Match){layout("${m.home} vs ${m.away}","Fuente: $importSource · ID ${m.id}")
-  button("Volver"){home()};card("${m.homeGoals?:"–"} : ${m.awayGoals?:"–"}","${if(m.finished)"FINAL" else "NO FINAL"} · ${whenText(m.whenMs)}\nDescargado: ${whenText(fetched)}")
+  button("Volver"){home()}
+  button(if(m.id in watch.matches(scope()))"Dejar de seguir partido"else"★ Seguir este partido"){
+    watch.toggleMatch(scope(),m.id);detail(m)
+  }
+  card("${m.homeGoals?:"–"} : ${m.awayGoals?:"–"}","${if(m.finished)"FINAL" else "NO FINAL"} · ${whenText(m.whenMs)}\nDescargado: ${whenText(fetched)}")
   val objectRaw=(0 until raw.length()).mapNotNull{raw.optJSONObject(it)}.firstOrNull{it.optLong("matchID").toString()==m.id}
   if(objectRaw!=null){val goals=Feed.goals(objectRaw);label("Goles registrados por la fuente",18f,accent);label(if(goals.isEmpty())"Sin detalle de goles disponible" else goals.joinToString("\n"),14f,soft)}
   label("Córners N/D · tarjetas N/D · remates N/D",14f,soft)
