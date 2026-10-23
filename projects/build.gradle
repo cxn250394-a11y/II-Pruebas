@@ -48,6 +48,7 @@ project(':canal') {
     android { defaultConfig { ndk { abiFilters 'arm64-v8a', 'x86_64' } } }
 }
 project(':audio') {
+    android { defaultConfig { versionCode 2; versionName '0.2.0-beta' } }
     dependencies {
         implementation 'androidx.media3:media3-exoplayer:1.5.1'
         implementation 'androidx.media3:media3-exoplayer-hls:1.5.1'

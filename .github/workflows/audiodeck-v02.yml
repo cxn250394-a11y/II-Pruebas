@@ -1,0 +1,111 @@
+name: AudioDeck v0.2 | Radio, Sleep Timer & APK
+on:
+  pull_request:
+    paths:
+      - 'projects/audio/**'
+      - 'projects/ui/**'
+      - 'projects/logic/**'
+      - 'projects/build.gradle'
+      - '.github/workflows/audiodeck-v02.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: audio-v02-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    if: github.repository == 'cxn250394-a11y/II-Pruebas'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: projects
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: false
+      - name: Android SDK 37
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.1'
+      - name: Isolation and privacy contracts
+        run: python3 check-contracts.py
+      - name: Test core and audio, lint, build
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace :logic:test :audio:testDebugUnitTest :audio:lintDebug :audio:assembleDebug 2>&1 | tee audio-ci.log
+      - name: Signed APK and provenance
+        run: |
+          mkdir -p ../audio-v02-artifacts
+          cp audio/build/outputs/apk/debug/audio-debug.apk ../audio-v02-artifacts/AudioDeck-v0.2-beta.apk
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs ../audio-v02-artifacts/AudioDeck-v0.2-beta.apk > ../audio-v02-artifacts/APK-VERIFY.txt
+          cd ../audio-v02-artifacts
+          sha256sum AudioDeck-v0.2-beta.apk > SHA256SUMS.txt
+          git -C .. rev-parse HEAD > SOURCE-COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audiodeck-v02-apk
+          path: audio-v02-artifacts/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audiodeck-v02-tests
+          path: |
+            projects/audio-ci.log
+            projects/logic/build/test-results/test/*.xml
+            projects/audio/build/test-results/testDebugUnitTest/*.xml
+            projects/audio/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+          retention-days: 14
+  emulator:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@v4
+        with:
+          name: audiodeck-v02-apk
+          path: audio-v02-artifacts
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: bash projects/audio/emulator-smoke.sh
+      - name: Emulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audiodeck-v02-emulator
+          path: audio-emulator/
+          if-no-files-found: warn
+          retention-days: 14
