@@ -4,166 +4,164 @@ import com.badlogic.gdx.*
 import com.badlogic.gdx.graphics.*
 import com.badlogic.gdx.graphics.g2d.*
 import com.badlogic.gdx.graphics.g3d.*
-import com.badlogic.gdx.graphics.g3d.attributes.*
+import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight
-import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.*
-import com.badlogic.gdx.utils.viewport.StretchViewport
+import com.badlogic.gdx.utils.Align
+import com.badlogic.gdx.utils.viewport.ExtendViewport
+import mx.charly.logic.Cup
 import mx.charly.logic.Race
 import kotlin.math.*
 
-/** Original procedural 3D arcade racer. No Vector Unit / Nintendo assets or code. */
-class SandriftGame:ApplicationAdapter(){
+/** Sandrift Karts v0.2: original procedural 3D arcade racer. Rules live in :logic Race; this class only renders and reads input. */
+class SandriftGame(private val autostart:Boolean=false):ApplicationAdapter(){
  private lateinit var batch:ModelBatch;private lateinit var sprites:SpriteBatch;private lateinit var shapes:ShapeRenderer;private lateinit var font:BitmapFont
- private lateinit var camera:PerspectiveCamera;private lateinit var overlay:OrthographicCamera;private lateinit var viewport:StretchViewport;private lateinit var environment:Environment
- private var scenery:ModelCache?=null
- private val models=mutableListOf<Model>();private val carModels=mutableListOf<Model>();private val cars=mutableListOf<List<ModelInstance>>()
- private val boxes=mutableListOf<ModelInstance>();private lateinit var pickupModel:Model
- private var race=Race();private var track=0;private var vehicle=0;private var skin=0;private var mode=0;private var difficulty=1;private var tilt=false
- private var inMenu=true;private var paused=false;private var awarded=false;private var cupPoints=0;private var circuitInCup=0
- private var menuTime=0f;private var time=0f;private var steer=0f;private var tiltZero=0f
- private val touches=BooleanArray(10)
- private val buttons=linkedMapOf<String,Rectangle>()
- private val colors=listOf(Color.valueOf("FFCD5C"),Color.valueOf("61E2D0"),Color.valueOf("FC7193"),Color.valueOf("9C94FF"),Color.valueOf("F28E54"))
- private val sky=listOf(Color.valueOf("7DCADF"),Color.valueOf("F1B485"),Color.valueOf("233355"))
- private val names=listOf("COSTA TURQUESA","DUNAS DEL SOL","ISLA NOCTURNA")
- private val attrs=(VertexAttributes.Usage.Position or VertexAttributes.Usage.Normal).toLong()
- private val builder=ModelBuilder()
- private fun mat(c:Color)=Material(ColorAttribute.createDiffuse(c),IntAttribute.createCullFace(GL20.GL_NONE))
- private fun keep(m:Model):Model=models.add(m).let{m}
- private fun box(w:Float,h:Float,d:Float,c:Color)=keep(builder.createBox(w,h,d,mat(c),attrs))
- private fun sphere(w:Float,h:Float,d:Float,c:Color)=keep(builder.createSphere(w,h,d,8,6,mat(c),attrs))
- private fun cylinder(w:Float,h:Float,d:Float,c:Color)=keep(builder.createCylinder(w,h,d,8,mat(c),attrs))
+ private lateinit var camera:PerspectiveCamera;private lateinit var overlay:OrthographicCamera;private lateinit var viewport:ExtendViewport;private lateinit var env:Environment
+ private lateinit var prefs:Preferences
+ private var world:World?=null
+ private var race=Race();private var track=0;private var vehicle=0;private var skin=0;private var mode=0;private var difficulty=1
+ private var controls=ControlSettings();private var cup:Cup?=null;private var recorded=false
+ private var inMenu=true;private var paused=false;private var menuTime=0f;private var time=0f;private var steer=0f;private var tiltZero=0f;private var best=Float.MAX_VALUE
+ private val perf=PerfMeter();private var perfClock=0f
+ private val touches=BooleanArray(10);private var buttons:Map<String,Box> =emptyMap()
+ private val labels=mutableListOf<Triple<String,Box,Color>>();private val texts=mutableListOf<Triple<String,Vector2,Pair<Float,Color>>>()
+ private val itemNames=mapOf("NITRO" to "TURBO","SHIELD" to "ESCUDO","PULSE" to "PULSO","MINE" to "MINA")
+ private val rivalNames=listOf("TU","MAREA","CORAL","DUNA","BRISA")
+ private val gold=Color.valueOf("FFD06A");private val teal=Color.valueOf("138D91");private val navy=Color.valueOf("193B50")
+ private val tierColors=listOf(Color.WHITE,Color.valueOf("4FC3F7"),Color.valueOf("FF9F43"),Color.valueOf("C77DFF"))
  override fun create(){
-  batch=ModelBatch();sprites=SpriteBatch();shapes=ShapeRenderer();font=BitmapFont();font.data.setScale(1.35f)
-  camera=PerspectiveCamera(64f,Gdx.graphics.width.toFloat(),Gdx.graphics.height.toFloat());camera.near=.2f;camera.far=750f
-  overlay=OrthographicCamera();viewport=StretchViewport(1000f,600f,overlay);viewport.update(Gdx.graphics.width,Gdx.graphics.height,true)
-  environment=Environment().apply{set(ColorAttribute(ColorAttribute.AmbientLight,.68f,.72f,.78f,1f));add(DirectionalLight().set(.95f,.9f,.8f,-.5f,-1f,-.4f))}
+  batch=ModelBatch();sprites=SpriteBatch();shapes=ShapeRenderer();font=BitmapFont();font.setUseIntegerPositions(false)
+  camera=PerspectiveCamera(64f,Gdx.graphics.width.toFloat(),Gdx.graphics.height.toFloat()).apply{near=.3f;far=800f}
+  overlay=OrthographicCamera();viewport=ExtendViewport(HudLayout.MIN_W,HudLayout.MIN_H,overlay);viewport.update(Gdx.graphics.width,Gdx.graphics.height,true)
+  env=Environment().apply{set(ColorAttribute(ColorAttribute.AmbientLight,.62f,.66f,.74f,1f));add(DirectionalLight().set(.98f,.92f,.82f,-.5f,-1f,-.35f))}
+  prefs=Gdx.app.getPreferences("sandrift_settings");controls=ControlSettings.decode(prefs.getString("controls",null))
   Gdx.input.setCatchKey(Input.Keys.BACK,true)
-  buildWorld()
+  rebuild();if(autostart)start(false)
  }
- private fun pos(distance:Float,lane:Float=0f):Vector3{val p=race.position(distance,lane);return Vector3(p[0],p[1]+1.2f,p[2])}
- private fun buildWorld(){
-  scenery?.dispose();models.forEach{it.dispose()};models.clear();cars.clear();boxes.clear();carModels.clear()
-  val static=mutableListOf<ModelInstance>()
-  val water=box(1200f,1f,1200f,if(track==2)Color.valueOf("10223F") else Color.valueOf("19A7BA"));static+=ModelInstance(water).apply{transform.setToTranslation(0f,-5f,0f)}
-  val sand=if(track==1)Color.valueOf("D6985E") else Color.valueOf("D9C28B")
-  val inner=cylinder(175f,3f,145f,sand);static+=ModelInstance(inner).apply{transform.setToTranslation(0f,-4.5f,0f)}
-  builder.begin();val road=builder.part("asphalt",GL20.GL_TRIANGLES,attrs,mat(if(track==1)Color.valueOf("97704E") else Color.valueOf("3C5963")))
-  val n=180
-  for(i in 0 until n){val a=race.length*i/n;val b=race.length*(i+1)/n;road.rect(pos(a,-6f),pos(b,-6f),pos(b,6f),pos(a,6f),Vector3.Y)}
-  val roadModel=keep(builder.end());static+=ModelInstance(roadModel)
-  builder.begin();val edges=builder.part("banks",GL20.GL_TRIANGLES,attrs,mat(sand))
-  for(i in 0 until n){val a=race.length*i/n;val b=race.length*(i+1)/n
-   edges.rect(pos(a,-6f).add(0f,-.03f,0f),pos(b,-6f).add(0f,-.03f,0f),pos(b,-22f).apply{y=-3.5f},pos(a,-22f).apply{y=-3.5f},Vector3.Y)
-   edges.rect(pos(a,6f).add(0f,-.03f,0f),pos(b,6f).add(0f,-.03f,0f),pos(b,23f).apply{y=-3.5f},pos(a,23f).apply{y=-3.5f},Vector3.Y)
-  };static+=ModelInstance(keep(builder.end()))
-  val marker=box(.3f,.07f,2.0f,Color.valueOf("E8E3CF"))
-  for(i in 0 until 100){val a=race.length*i/100;val p=pos(a);val forward=pos(a+1).sub(p);val yaw=atan2(forward.x,forward.z)*MathUtils.radiansToDegrees;static+=ModelInstance(marker).apply{transform.setToTranslation(p).translate(0f,.05f,0f).rotate(Vector3.Y,yaw)}}
-  val trunk=cylinder(.65f,7f,.65f,Color.valueOf("866148"));val leaf=box(1.1f,.24f,5.7f,if(track==1)Color.valueOf("6E8750") else Color.valueOf("438E62"))
-  for(i in 0 until 46){val p=pos(race.length*i/46,if(i%2==0)17f else -17f);p.y=-1.5f
-   static+=ModelInstance(trunk).apply{transform.setToTranslation(p).translate(0f,3.5f,0f).rotate(Vector3.Z,(i%3-1)*7f)}
-   repeat(5){k->static+=ModelInstance(leaf).apply{transform.setToTranslation(p).translate(0f,6.7f,0f).rotate(Vector3.Y,k*72f+i*13).rotate(Vector3.X,18f).translate(0f,0f,2f)}}
-  }
-  val rock=keep(builder.createCone(24f,35f,25f,6,mat(if(track==2)Color.valueOf("474766") else Color.valueOf("849D86")),attrs))
-  repeat(12){i->val a=i*PI*2/12;static+=ModelInstance(rock).apply{transform.setToTranslation((cos(a)*230).toFloat(),5f+(i%3)*3,(sin(a)*220).toFloat()).scale(1f+(i%2)*.8f,1f+(i%3)*.35f,1f)}}
-  val post=box(.6f,7f,.6f,Color.WHITE);val arch=box(14f,1f,1f,Color.valueOf("F9CB59"));val start=pos(0f);val direction=pos(1f).sub(start);val yaw=atan2(direction.x,direction.z)*MathUtils.radiansToDegrees;val transform=Matrix4().setToTranslation(start).rotate(Vector3.Y,yaw)
-  static+=ModelInstance(post).apply{this.transform.set(transform).translate(-6.7f,3.5f,0f)};static+=ModelInstance(post).apply{this.transform.set(transform).translate(6.7f,3.5f,0f)};static+=ModelInstance(arch).apply{this.transform.set(transform).translate(0f,7f,0f)}
-  scenery=ModelCache().apply{begin();static.forEach{add(it)};end()}
-  val wheel=cylinder(.68f,.42f,.68f,Color.valueOf("18242B"));val head=sphere(.65f,.65f,.65f,Color.valueOf("DDA77F"));val visor=box(.5f,.18f,.12f,Color.valueOf("27343B"));val exhaust=box(.3f,.3f,.4f,Color.DARK_GRAY)
-  for(i in 0 until 5){val c=colors[if(i==0)skin else i];val body=box(if(vehicle==2&&i==0)2.3f else 1.9f,.65f,3f,c);val seat=box(1.25f,.5f,1.1f,Color.valueOf("223644"));val helmet=sphere(.75f,.65f,.75f,c)
-   cars+=listOf(ModelInstance(body),ModelInstance(seat),ModelInstance(head),ModelInstance(helmet),ModelInstance(visor),ModelInstance(exhaust),ModelInstance(wheel),ModelInstance(wheel),ModelInstance(wheel),ModelInstance(wheel))
-  }
-  pickupModel=box(1.4f,1.4f,1.4f,Color.valueOf("F0D078"));repeat(6){boxes+=ModelInstance(pickupModel)}
- }
- private fun start(cup:Boolean=false){if(cup){circuitInCup=0;cupPoints=0;track=0};race=Race(track,vehicle,difficulty);paused=false;awarded=false;time=0f;inMenu=false;buildWorld();tiltZero=Gdx.input.accelerometerY}
- private fun restart(){race=Race(track,vehicle,difficulty);paused=false;awarded=false;time=0f}
- private fun point(pointer:Int):Vector2=viewport.unproject(Vector2(Gdx.input.getX(pointer).toFloat(),Gdx.input.getY(pointer).toFloat()))
- private fun isHeld(id:String):Boolean{val r=buttons[id]?:return false;for(i in touches.indices)if(Gdx.input.isTouched(i)&&r.contains(point(i)))return true;return false}
- private fun input(){
-  if(Gdx.input.isKeyJustPressed(Input.Keys.BACK)||Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)){if(!inMenu)paused=!paused}
-  steer=if(tilt)((Gdx.input.accelerometerY-tiltZero)/4f).coerceIn(-1f,1f) else 0f
-  if(isHeld("left")||Gdx.input.isKeyPressed(Input.Keys.LEFT))steer=-1f
-  if(isHeld("right")||Gdx.input.isKeyPressed(Input.Keys.RIGHT))steer=1f
-  for(i in touches.indices){val down=Gdx.input.isTouched(i);if(down&&!touches[i]){val p=point(i);buttons.entries.firstOrNull{it.value.contains(p)}?.let{clicked(it.key)}};touches[i]=down}
+ private fun rebuild(){world?.dispose();world=World(race,track,vehicle,skin)}
+ private fun newRace()=Race(track,vehicle,difficulty,seed=System.nanoTime() and 0xFFFF,rivals=if(mode==2)0 else 4)
+ private fun start(isCup:Boolean){if(isCup){cup=Cup();track=0}else cup=null
+  race=newRace();paused=false;recorded=false;time=0f;inMenu=false;rebuild();tiltZero=Gdx.input.accelerometerY;loadBest()}
+ private fun loadBest(){best=Gdx.app.getPreferences("sandrift_records").getFloat("track_${track}_vehicle_$vehicle",Float.MAX_VALUE)}
+ private fun restart(){race=newRace();paused=false;recorded=false;time=0f;rebuild()}
+ private fun saveControls(){prefs.putString("controls",controls.encode());prefs.flush()}
+ private fun point(p:Int):Vector2=viewport.unproject(Vector2(Gdx.input.getX(p).toFloat(),Gdx.input.getY(p).toFloat()))
+ private fun held(id:String):Boolean{val r=buttons[id]?:return false;for(i in touches.indices)if(Gdx.input.isTouched(i)){val p=point(i);if(r.contains(p.x,p.y))return true};return false}
+ private fun input(dt:Float){
+  if(Gdx.input.isKeyJustPressed(Input.Keys.BACK)||Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)){if(!inMenu&&!race.finished)setPaused(!paused)}
+  for(i in touches.indices){val down=Gdx.input.isTouched(i);if(down&&!touches[i]){val p=point(i);buttons.entries.firstOrNull{it.value.contains(p.x,p.y)}?.let{clicked(it.key)}};touches[i]=down}
+  val l=held("left")||Gdx.input.isKeyPressed(Input.Keys.LEFT);val r=held("right")||Gdx.input.isKeyPressed(Input.Keys.RIGHT)
+  steer=if(l||r||!controls.tilt)controls.ramp(steer,(if(r)1f else 0f)-(if(l)1f else 0f),dt) else controls.tiltSteer(Gdx.input.accelerometerY,tiltZero)
   if(Gdx.input.isKeyJustPressed(Input.Keys.SPACE))race.useItem()
  }
+ private fun setPaused(p:Boolean){paused=p;race.paused=p}
  private fun clicked(id:String){when(id){
   "race"->start(mode==1)
-  "track"->{track=(track+1)%3;race=Race(track,vehicle,difficulty);buildWorld()}
+  "track"->{track=(track+1)%3;race=Race(track,vehicle,difficulty);rebuild()}
   "vehicle"->vehicle=(vehicle+1)%3
-  "skin"->{skin=(skin+1)%colors.size;buildWorld()}
+  "skin"->{skin=(skin+1)%World.COLORS.size;rebuild()}
   "mode"->mode=(mode+1)%3
   "difficulty"->difficulty=(difficulty+1)%3
-  "tilt"->{tilt=!tilt;tiltZero=Gdx.input.accelerometerY}
+  "tilt"->{controls=controls.copy(tilt=!controls.tilt);tiltZero=Gdx.input.accelerometerY;saveControls()}
+  "sens-"->{controls=controls.withSensitivity(-.1f);saveControls()};"sens+"->{controls=controls.withSensitivity(.1f);saveControls()}
+  "dz-"->{controls=controls.withDeadZone(-.02f);saveControls()};"dz+"->{controls=controls.withDeadZone(.02f);saveControls()}
   "item"->race.useItem()
-  "pause"->paused=!paused
-  "resume"->paused=false
+  "pause"->setPaused(true);"resume"->setPaused(false)
   "restart"->restart()
-  "menu"->{inMenu=true;paused=false}
-  "next"->{circuitInCup++;track=circuitInCup;race=Race(track,vehicle,difficulty);awarded=false;paused=false;time=0f;buildWorld()}
+  "menu"->{inMenu=true;setPaused(false);cup=null}
+  "next"->{track=(track+1)%3;restart();loadBest()}
  }}
- override fun render(){val dt=Gdx.graphics.deltaTime.coerceIn(0f,.05f);input();menuTime+=dt
-  if(!inMenu&&!paused&&!race.finished){race.step(dt,steer,isHeld("drift")||Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT),isHeld("brake")||Gdx.input.isKeyPressed(Input.Keys.DOWN));time+=dt}
-  if(race.finished&&!awarded){awarded=true;val points=listOf(10,7,5,3,1)[race.rank-1];if(mode==1)cupPoints+=points
-   val pref=Gdx.app.getPreferences("sandrift_records");val key="track_${track}_vehicle_$vehicle";val old=pref.getFloat(key,Float.MAX_VALUE);if(race.elapsed<old){pref.putFloat(key,race.elapsed);pref.flush()}}
-  val c=sky[track];Gdx.gl.glViewport(0,0,Gdx.graphics.width,Gdx.graphics.height);Gdx.gl.glClearColor(c.r,c.g,c.b,1f);Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
+ override fun render(){
+  val raw=Gdx.graphics.deltaTime;val dt=raw.coerceIn(0f,.05f);input(dt);menuTime+=dt
+  if(!inMenu&&!paused&&!race.finished){race.step(dt,steer,held("drift")||Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT),held("brake")||Gdx.input.isKeyPressed(Input.Keys.DOWN),
+   (held("gas")||Gdx.input.isKeyPressed(Input.Keys.UP)||autostart));time+=dt}
+  if(!inMenu&&!paused){perf.add(raw);perfClock+=raw;if(perfClock>=5f){perfClock=0f;Gdx.app.log("SandriftPerf",perf.summary("track=$track ${Gdx.graphics.width}x${Gdx.graphics.height}"))}}
+  if(race.finished&&!recorded){recorded=true;cup?.record(race.standings())
+   val p=Gdx.app.getPreferences("sandrift_records");val key="track_${track}_vehicle_$vehicle";if(race.elapsed<p.getFloat(key,Float.MAX_VALUE)){p.putFloat(key,race.elapsed);p.flush()}}
+  val w=world!!;val c=World.SKY[track];Gdx.gl.glViewport(0,0,Gdx.graphics.width,Gdx.graphics.height);Gdx.gl.glClearColor(c.r,c.g,c.b,1f);Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
   val me=race.drivers[0]
-  if(inMenu){camera.position.set(cos(menuTime*.12f)*155f,82f,sin(menuTime*.12f)*155f);camera.lookAt(0f,0f,0f)}else{
-   val p=pos(me.distance,me.lane);val forward=pos(me.distance+4,me.lane).sub(p).nor();val wanted=p.cpy().mulAdd(forward,-10f).add(0f,5f,0f)
-   if(time<.1f)camera.position.set(wanted)else camera.position.lerp(wanted,(dt*7).coerceAtMost(1f));camera.up.set(Vector3.Y);camera.lookAt(p.cpy().mulAdd(forward,9f).add(0f,1.5f,0f))
-  };camera.update();batch.begin(camera);scenery?.let{batch.render(it,environment)}
-  val count=if(mode==2&&!inMenu)1 else 5
-  repeat(count){i->val driver=race.drivers[i];val p=pos(driver.distance,driver.lane);val tangent=pos(driver.distance+2,driver.lane).sub(p);val yaw=atan2(tangent.x,tangent.z)*MathUtils.radiansToDegrees+(if(i==0&&isHeld("drift"))steer*18 else 0f)
-   val base=Matrix4().setToTranslation(p).rotate(Vector3.Y,yaw).translate(0f,.75f+sin(time*12+i)*.045f,0f)
-   val parts=cars[i];parts[0].transform.set(base);parts[1].transform.set(base).translate(0f,.55f,-.3f);parts[2].transform.set(base).translate(0f,1.1f,-.3f);parts[3].transform.set(base).translate(0f,1.32f,-.35f);parts[4].transform.set(base).translate(0f,1.15f,.02f);parts[5].transform.set(base).translate(.4f,-.15f,-1.7f)
-   for(w in 0..3){parts[6+w].transform.set(base).translate(if(w%2==0)-1.05f else 1.05f,-.35f,if(w<2)1f else -1f).rotate(Vector3.Z,90f).rotate(Vector3.Y,driver.distance*45)}
-   parts.forEach{batch.render(it,environment)}
-  }
-  boxes.forEachIndexed{i,b->b.transform.setToTranslation(pos(i*180f,0f)).translate(0f,2f+sin(menuTime*2+i)*.25f,0f).rotate(Vector3.Y,menuTime*55);batch.render(b,environment)}
+  if(inMenu){camera.fieldOfView=60f;camera.position.set(cos(menuTime*.12f)*160f,85f,sin(menuTime*.12f)*160f);camera.up.set(Vector3.Y);camera.lookAt(0f,0f,0f)}else{
+   val p=w.pos(me.distance,me.lane);val f=w.pos(me.distance+4,me.lane).sub(p).nor();val wanted=p.cpy().mulAdd(f,-11f).add(0f,5.6f,0f)
+   if(time<.1f)camera.position.set(wanted) else camera.position.lerp(wanted,(dt*7).coerceAtMost(1f))
+   camera.fieldOfView=MathUtils.lerp(camera.fieldOfView,if(me.boost>0)74f else 64f,(dt*4).coerceAtMost(1f))
+   camera.up.set(Vector3.Y);camera.lookAt(p.cpy().mulAdd(f,9f).add(0f,1.5f,0f))}
+  camera.update();batch.begin(camera);batch.render(w.scenery,env)
+  race.boxes.forEachIndexed{i,b->if(b.active){val m=w.boxes[i];m.transform.setToTranslation(w.pos(b.distance,b.lane)).translate(0f,1.4f+sin(menuTime*2+i)*.25f,0f).rotate(Vector3.Y,menuTime*70+i*20).rotate(Vector3.X,25f);batch.render(m,env)}}
+  w.obstacles.forEach{batch.render(it,env)}
+  race.mines.take(w.mines.size).forEachIndexed{i,m->w.mines[i].transform.setToTranslation(w.pos(m.distance,m.lane)).translate(0f,.1f,0f);batch.render(w.mines[i],env)}
+  race.drivers.forEachIndexed{i,d->drawKart(w,i,d.distance,d.lane,d.latVel,d.stun>0)}
+  if(!inMenu)effects(w)
   batch.end();drawUi()
  }
- private fun rect(id:String,x:Float,y:Float,w:Float,h:Float,label:String,color:Color=Color.valueOf("193B50")){
-  buttons[id]=Rectangle(x,y,w,h);shapes.begin(ShapeRenderer.ShapeType.Filled);shapes.color=color;shapes.rect(x,y,w,h);shapes.end();sprites.begin();font.color=Color.WHITE;font.data.setScale(1.3f);font.draw(sprites,label,x+12,y+h/2+8);sprites.end()
+ private fun drawKart(w:World,i:Int,distance:Float,lane:Float,lat:Float,stunned:Boolean){
+  val p=w.pos(distance,lane);val slide=(lat*2.2f).coerceIn(-22f,22f)+(if(stunned)menuTime*720f%360f else 0f)
+  val base=Matrix4().setToTranslation(p).rotate(Vector3.Y,w.yaw(distance,lane)+slide).translate(0f,.75f+sin(time*12+i)*.04f,0f)
+  w.shadows[i].transform.set(base).translate(0f,-.72f,0f);batch.render(w.shadows[i],env)
+  val k=w.cars[i];k[0].transform.set(base);k[1].transform.set(base).translate(0f,.5f,-.3f);k[2].transform.set(base).translate(0f,1.05f,-.3f);k[3].transform.set(base).translate(0f,1.3f,-.35f)
+  k[4].transform.set(base).translate(0f,1.15f,.04f);k[5].transform.set(base).translate(.45f,-.1f,-1.7f);k[6].transform.set(base).translate(0f,-.2f,1.6f);k[7].transform.set(base).translate(0f,.75f,-1.45f)
+  for(n in 0..3)k[8+n].transform.set(base).translate(if(n%2==0)-1.05f else 1.05f,-.35f,if(n<2)1f else -1f).rotate(Vector3.Z,90f).rotate(Vector3.Y,distance*45)
+  k.forEach{batch.render(it,env)}
  }
- private fun words(s:String,x:Float,y:Float,scale:Float=1.4f,color:Color=Color.WHITE){sprites.begin();font.color=color;font.data.setScale(scale);font.draw(sprites,s,x,y);sprites.end()}
- private fun plate(x:Float,y:Float,w:Float,h:Float){Gdx.gl.glEnable(GL20.GL_BLEND);Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA,GL20.GL_ONE_MINUS_SRC_ALPHA);shapes.begin(ShapeRenderer.ShapeType.Filled);shapes.setColor(.035f,.08f,.14f,.88f);shapes.rect(x,y,w,h);shapes.end();Gdx.gl.glDisable(GL20.GL_BLEND)}
- private fun drawUi(){viewport.apply();overlay.update();sprites.projectionMatrix=overlay.combined;shapes.projectionMatrix=overlay.combined;buttons.clear()
-  if(inMenu){plate(35f,35f,590f,530f);words("SANDRIFT",60f,520f,3.4f,Color.valueOf("FFD06A"));words("KARTS  /  3D ARCADE",63f,468f,1.8f)
-   words("Prototipo original - 3 circuitos, 3 vehiculos, 5 pilotos",63f,430f,1.05f)
-   rect("track",60f,350f,530f,48f,"Circuito: ${names[track]}")
-   rect("vehicle",60f,290f,255f,48f,"Vehiculo: ${listOf("BUGGY","KART","RALLY")[vehicle]}")
-   rect("skin",330f,290f,260f,48f,"Piloto / color: ${skin+1}")
-   rect("mode",60f,230f,530f,48f,"Modo: ${listOf("CARRERA","COPA 3 CIRCUITOS","CONTRARRELOJ")[mode]}")
-   rect("difficulty",60f,170f,255f,48f,"Rivales: ${listOf("SUAVE","NORMAL","RAPIDO")[difficulty]}")
-   rect("tilt",330f,170f,260f,48f,if(tilt)"Control: INCLINACION" else "Control: BOTONES")
-   rect("race",60f,85f,530f,62f,"INICIAR",Color.valueOf("138D91"))
-   words("Aceleracion automatica. Derrapa y suelta para mini-turbo.",650f,140f,.9f)
-   words("Objetos: NITRO, SHIELD, PULSE. Sin compras ni anuncios.",650f,115f,.9f)
-   return
-  }
-  plate(20f,495f,340f,85f);words(if(mode==2)"CONTRARRELOJ" else "POSICION ${race.rank} / 5",36f,565f,1.65f)
-  words("VUELTA ${race.lap}/3   ${"%.1f".format(race.elapsed)} s",36f,531f,1.3f)
-  words("${(race.drivers[0].speed*3.6).toInt()} km/h",420f,565f,1.7f)
-  words("${Gdx.graphics.framesPerSecond} FPS medidos",420f,535f,1f)
-  rect("pause",835f,525f,140f,48f,"PAUSA")
-  if(race.countdown>0)words(ceil(race.countdown).toInt().toString(),470f,350f,6f,Color.valueOf("FFD06A"))
-  rect("left",25f,30f,120f,90f,"< IZQ");rect("right",160f,30f,120f,90f,"DER >")
-  rect("brake",325f,30f,135f,68f,"FRENO");rect("drift",490f,30f,180f,68f,"DERRAPE")
-  rect("item",725f,30f,250f,90f,race.item.ifEmpty{"SIN OBJETO"},if(race.item.isEmpty())Color.valueOf("344457")else Color.valueOf("B57D31"))
-  if(race.driftCharge>.1f){shapes.begin(ShapeRenderer.ShapeType.Filled);shapes.color=Color.valueOf("65E8DF");shapes.rect(490f,108f,180f*race.driftCharge/2,10f);shapes.end()}
-  if(race.drivers[0].boost>0)words("TURBO",440f,450f,2.5f,Color.valueOf("F6D56B"))
-  if(abs(race.drivers[0].lane)>5.7f)words("FUERA DE PISTA - REGRESA AL CENTRO",290f,400f,1.3f,Color.valueOf("F4BF86"))
-  if(paused||race.finished){buttons.clear();plate(260f,140f,480f,340f)
-   words(if(race.finished)"META - POSICION ${race.rank}" else "PAUSA",300f,440f,2.4f,Color.valueOf("FFD06A"))
-   if(race.finished){words("Tiempo: ${"%.2f".format(race.elapsed)} s",300f,390f,1.5f);if(mode==1)words("Copa: $cupPoints puntos",300f,360f,1.4f)
-    if(mode==1&&circuitInCup<2)rect("next",300f,275f,400f,58f,"SIGUIENTE CIRCUITO",Color.valueOf("138D91"))else rect("restart",300f,275f,400f,58f,"REPETIR CARRERA")
-   }else rect("resume",300f,285f,400f,65f,"CONTINUAR",Color.valueOf("138D91"))
-   rect("menu",300f,190f,400f,58f,"VOLVER AL MENU")
-  }
+ private fun effects(w:World){val me=race.drivers[0];val base=Matrix4().setToTranslation(w.pos(me.distance,me.lane)).rotate(Vector3.Y,w.yaw(me.distance,me.lane))
+  if(me.boost>0){w.flame.transform.set(base).translate(0f,.7f,-2.3f).rotate(Vector3.X,-90f).scale(1f,1f+sin(menuTime*40)*.25f,1f);batch.render(w.flame,env)}
+  val lvl=race.driftLevel;if(race.driftCharge>.05f){val col=tierColors[lvl]
+   w.sparks.forEachIndexed{n,s->(s.materials[0].get(ColorAttribute.Emissive) as ColorAttribute).color.set(col);(s.materials[0].get(ColorAttribute.Diffuse) as ColorAttribute).color.set(col)
+    val side=if(n%2==0)-1f else 1f;val j=((menuTime*37+n*13)%1f);s.transform.set(base).translate(side*1.1f,.15f+j*.5f,-1.5f-j*1.2f);batch.render(s,env)}}
+ }
+ private fun button(id:String,b:Box,label:String,color:Color=navy){labels+=Triple(label,b,color)}
+ private fun text(s:String,x:Float,y:Float,scale:Float=1.4f,color:Color=Color.WHITE){texts+=Triple(s,Vector2(x,y),Pair(scale,color))}
+ /** Batched overlay: one shape pass and one text pass per frame instead of begin/end per widget. */
+ private fun flush(panels:List<Pair<Box,Color>>,extra:(ShapeRenderer)->Unit={}){
+  Gdx.gl.glEnable(GL20.GL_BLEND);Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA,GL20.GL_ONE_MINUS_SRC_ALPHA)
+  shapes.begin(ShapeRenderer.ShapeType.Filled);panels.forEach{(b,c)->shapes.color=c;shapes.rect(b.x,b.y,b.w,b.h)}
+  labels.forEach{(_,b,c)->shapes.setColor(c.r,c.g,c.b,.86f);shapes.rect(b.x,b.y,b.w,b.h);shapes.setColor(1f,1f,1f,.18f);shapes.rect(b.x,b.y+b.h-5f,b.w,5f)};extra(shapes);shapes.end()
+  Gdx.gl.glDisable(GL20.GL_BLEND)
+  sprites.begin();labels.forEach{(s,b,_)->font.color=Color.WHITE;font.data.setScale(1.45f);font.draw(sprites,s,b.x,b.cy+9f,b.w,Align.center,false)}
+  texts.forEach{(s,p,st)->font.color=st.second;font.data.setScale(st.first);font.draw(sprites,s,p.x,p.y)};sprites.end();labels.clear();texts.clear()
+ }
+ private fun drawUi(){viewport.apply();overlay.update();sprites.projectionMatrix=overlay.combined;shapes.projectionMatrix=overlay.combined
+  val W=viewport.worldWidth;val H=viewport.worldHeight;val panel=Color(.035f,.08f,.14f,.82f)
+  if(inMenu){val m=HudLayout.menu(W,H);buttons=m
+   text("SANDRIFT KARTS",60f,H-40f,3.2f,gold);text("v0.2 beta - kart arcade original, sin compras ni anuncios",62f,H-100f,1.05f)
+   button("track",m["track"]!!,"Circuito: ${World.NAMES[track]}");button("vehicle",m["vehicle"]!!,"Vehiculo: ${Race.VEHICLES[vehicle].name}")
+   button("skin",m["skin"]!!,"Color: ${skin+1}");button("mode",m["mode"]!!,"Modo: ${listOf("CARRERA","COPA 3 CIRCUITOS","CONTRARRELOJ")[mode]}")
+   button("difficulty",m["difficulty"]!!,"Rivales: ${listOf("SUAVE","NORMAL","RAPIDO")[difficulty]}");button("tilt",m["tilt"]!!,if(controls.tilt)"INCLINACION" else "BOTONES")
+   button("race",m["race"]!!,"INICIAR",teal)
+   listOf("sens-" to "-","sens+" to "+","dz-" to "-","dz+" to "+").forEach{(id,s)->button(id,m[id]!!,s)}
+   text("Sensibilidad ${"%.1f".format(controls.sensitivity)}",W-370f,m["sens-"]!!.y+100f,1.2f);text("Zona muerta ${(controls.deadZone*100).toInt()}%",W-370f,m["dz-"]!!.y+90f,1.2f)
+   text("Volante a la izquierda, GAS a la derecha.",W-390f,H-470f,.95f);text("Derrapa en curva y suelta: azul, naranja, violeta.",W-390f,H-495f,.95f)
+   flush(listOf(Box(35f,20f,570f,H-40f) to panel,Box(W-395f,H-445f,370f,355f) to panel));return}
+  val L=HudLayout.race(W,H);buttons=L;val me=race.drivers[0]
+  text(if(mode==2)"CONTRARRELOJ" else "POSICION ${race.rank}/${race.drivers.size}",36f,H-30f,1.7f,gold)
+  text("VUELTA ${race.lap}/${Race.LAPS}   ${"%.1f".format(race.elapsed)} s",36f,H-66f,1.3f)
+  if(best<Float.MAX_VALUE)text("Record ${"%.2f".format(best)} s",36f,H-92f,1f)
+  text("${(me.speed*3.6f).toInt()} km/h",W/2-60f,H-30f,1.8f);text("${Gdx.graphics.framesPerSecond} FPS medidos",W/2-60f,H-64f,1f)
+  button("left",L["left"]!!,"<");button("right",L["right"]!!,">");button("gas",L["gas"]!!,"GAS",teal);button("brake",L["brake"]!!,"FRENO",Color.valueOf("8A3B3B"))
+  button("drift",L["drift"]!!,"DERRAPE",tierColors[race.driftLevel].cpy().lerp(navy,.45f));button("item",L["item"]!!,itemNames[race.item]?:"SIN OBJETO",if(race.item.isEmpty())Color.valueOf("344457") else Color.valueOf("B57D31"))
+  button("pause",L["pause"]!!,"PAUSA")
+  if(race.countdown>0)text(ceil(race.countdown).toInt().toString(),W/2-25f,H/2+90f,6f,gold) else if(race.elapsed<1f)text("YA!",W/2-60f,H/2+90f,5f,gold)
+  if(me.boost>0)text("TURBO",W/2-70f,H-110f,2.2f,Color.valueOf("F6D56B"))
+  if(abs(me.lane)>Race.ROAD)text("FUERA DE PISTA",W/2-110f,H/2+20f,1.4f,Color.valueOf("F4BF86"))
+  val dl=L["drift"]!!;val charge=race.driftCharge/2.1f
+  val panels=mutableListOf(Box(20f,H-115f,330f,105f) to panel,Box(W-200f,H-310f,180f,180f) to panel)
+  if(paused||race.finished){buttons=overlayButtons(W,H);panels+=Box(W/2-260f,H/2-230f,520f,470f) to Color(.02f,.05f,.1f,.92f)}
+  flush(panels){s->s.color=tierColors[race.driftLevel];s.rect(dl.x,dl.y+dl.h+6f,dl.w*charge.coerceAtMost(1f),10f);minimap(s,W-110f,H-220f)}
+ }
+ private fun minimap(s:ShapeRenderer,cx:Float,cy:Float){s.setColor(1f,1f,1f,.55f)
+  for(i in 0 until 60){val a=race.position(race.length*i/60);val b=race.position(race.length*(i+1)/60);s.rectLine(cx+a[0]*.55f,cy+a[2]*.55f,cx+b[0]*.55f,cy+b[2]*.55f,3f)}
+  race.drivers.forEachIndexed{i,d->val p=race.position(d.distance,d.lane);s.color=if(i==0)Color.WHITE else World.COLORS[i%5];s.circle(cx+p[0]*.55f,cy+p[2]*.55f,if(i==0)7f else 5f)}
+ }
+ private fun overlayButtons(W:Float,H:Float):Map<String,Box>{val o=HudLayout.pause(W,H);val x=W/2-230f
+  if(race.finished){text("META - POSICION ${race.rank}",x,H/2+215f,2.2f,gold);text("Tiempo ${"%.2f".format(race.elapsed)} s",x,H/2+170f,1.3f)
+   val c=cup;val order=if(c!=null)c.standings() else race.standings()
+   order.take(5).forEachIndexed{n,d->text("${n+1}. ${rivalNames[d]}${if(c!=null)"  ${c.points[d]} pts" else ""}",x+(n%2)*230f,H/2+135f-(n/2)*26f,1.1f)}
+   val nextOk=c!=null&&!c.done
+   button(if(nextOk)"next" else "restart",o["resume"]!!,if(nextOk)"SIGUIENTE CIRCUITO" else if(c!=null)"COPA TERMINADA - REPETIR" else "REPETIR CARRERA",teal)
+   button("menu",o["menu"]!!,"VOLVER AL MENU");return mapOf((if(nextOk)"next" else "restart") to o["resume"]!!,"menu" to o["menu"]!!)}
+  text("PAUSA",x,H/2+215f,2.4f,gold);button("resume",o["resume"]!!,"CONTINUAR",teal);button("restart",o["restart"]!!,"REINICIAR");button("menu",o["menu"]!!,"VOLVER AL MENU");return o
  }
  override fun resize(width:Int,height:Int){camera.viewportWidth=width.toFloat();camera.viewportHeight=height.toFloat();camera.update();viewport.update(width,height,true)}
- override fun pause(){if(!inMenu)paused=true}
- override fun dispose(){scenery?.dispose();models.forEach{it.dispose()};batch.dispose();sprites.dispose();shapes.dispose();font.dispose()}
+ override fun pause(){if(!inMenu&&!race.finished)setPaused(true);touches.fill(false)}
+ override fun dispose(){world?.dispose();batch.dispose();sprites.dispose();shapes.dispose();font.dispose()}
 }

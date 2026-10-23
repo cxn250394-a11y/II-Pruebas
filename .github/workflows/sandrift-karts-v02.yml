@@ -1,0 +1,114 @@
+name: Sandrift Karts v0.2 | APK, tests, emulator
+on:
+  pull_request:
+    paths:
+      - 'projects/kart/**'
+      - 'projects/logic/src/main/kotlin/mx/charly/logic/Race.kt'
+      - 'projects/logic/src/test/kotlin/mx/charly/logic/RaceTest.kt'
+      - '.github/workflows/sandrift-karts-v02.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sandrift-v02-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-test:
+    if: github.repository == 'cxn250394-a11y/II-Pruebas'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: projects
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Isolation contracts
+        run: python3 check-contracts.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: false
+      - name: SDK
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.1'
+      - name: Engine JUnit, kart JVM tests, lint, APK
+        run: |
+          set -o pipefail
+          gradle --no-daemon --continue --stacktrace :logic:test :kart:testDebugUnitTest :kart:lintDebug :kart:assembleDebug 2>&1 | tee build-sandrift.log
+      - name: APK, signature, SHA-256 and source commit
+        run: |
+          mkdir -p ../sandrift-apk
+          cp kart/build/outputs/apk/debug/kart-debug.apk ../sandrift-apk/Sandrift-Karts-v0.2-beta.apk
+          cd ../sandrift-apk
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs Sandrift-Karts-v0.2-beta.apk > apksigner-verify.txt
+          "$ANDROID_HOME/build-tools/37.0.0/aapt2" dump badging Sandrift-Karts-v0.2-beta.apk | grep -E "^package|uses-permission|sdkVersion" > badging.txt || true
+          sha256sum Sandrift-Karts-v0.2-beta.apk > SHA256SUMS.txt
+          git -C .. rev-parse HEAD > SOURCE-COMMIT.txt
+          ls -l Sandrift-Karts-v0.2-beta.apk | tee -a SIZE.txt
+          cat SHA256SUMS.txt SOURCE-COMMIT.txt badging.txt
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sandrift-Karts-v0.2-beta-apk
+          path: sandrift-apk/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Test and lint evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandrift-v02-test-evidence
+          path: |
+            projects/build-sandrift.log
+            projects/logic/build/test-results/test/*.xml
+            projects/kart/build/test-results/testDebugUnitTest/*.xml
+            projects/kart/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+          retention-days: 14
+  emulator:
+    needs: build-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@v4
+        with:
+          name: Sandrift-Karts-v0.2-beta-apk
+          path: sandrift-apk
+      - name: Verify downloaded APK checksum
+        run: cd sandrift-apk && sha256sum -c SHA256SUMS.txt
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: bash projects/kart/ci/sandrift-smoke.sh sandrift-apk/Sandrift-Karts-v0.2-beta.apk sandrift-evidence
+      - name: Emulator evidence (screenshots, perf log, results)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandrift-v02-emulator-evidence
+          path: sandrift-evidence/
+          if-no-files-found: warn
+          retention-days: 14
