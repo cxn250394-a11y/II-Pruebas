@@ -7,6 +7,20 @@ import java.util.UUID
 class Organization(context: Context, accountId: Long) {
     private val p = context.applicationContext.getSharedPreferences("canaldeck-org-$accountId", Context.MODE_PRIVATE)
     private fun set(key: String) = p.getStringSet(key, emptySet())?.toSet() ?: emptySet()
+    /** Independent from favorites and from Telegram server-side pins. */
+    fun important(id: Long) = id.toString() in set("important")
+    fun toggleImportant(id: Long) {
+        val current = set("important").toMutableSet()
+        if (!current.add(id.toString())) current.remove(id.toString())
+        p.edit().putStringSet("important", current).apply()
+    }
+    /** Only time measurements, never chat content or message identifiers. */
+    fun recordLocalNoticeAge(serverSeconds: Long, deviceMillis: Long) {
+        val age = DeckRules.observedAgeMillis(serverSeconds, deviceMillis) ?: return
+        p.edit().putLong("notice-age-ms", age).putLong("notice-local-at", deviceMillis).apply()
+    }
+    fun lastLocalNoticeAgeMillis(): Long? = p.getLong("notice-age-ms", -1).takeIf { it >= 0 }
+    fun lastLocalNoticeAt(): Long = p.getLong("notice-local-at", 0)
     fun favorite(id: Long) = id.toString() in set("favorites")
     fun toggleFavorite(id: Long) { val s = set("favorites").toMutableSet(); if (!s.add(id.toString())) s.remove(id.toString()); p.edit().putStringSet("favorites", s).apply() }
     fun folders(): List<Pair<String, String>> = set("folders").map { it to p.getString("name-$it", "Carpeta").orEmpty() }.sortedBy { DeckRules.normalized(it.second) }

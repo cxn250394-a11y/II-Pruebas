@@ -29,7 +29,7 @@ jobs:
           curl --fail --location --max-time 90 'https://repo.maven.apache.org/maven2/dev/g000sha256/tdl-coroutines-android/14.0.0/tdl-coroutines-android-14.0.0-sources.jar' -o ../../canal-source/tdl-sources.jar
       - uses: actions/upload-artifact@v4
         with:
-          name: canaldeck-source
+          name: canaldeck-personal-source
           path: canal-source/
           retention-days: 14
       - uses: actions/setup-java@v4
@@ -52,15 +52,15 @@ jobs:
       - name: Verify APK
         run: |
           mkdir -p ../../canal-apk
-          cp app/build/outputs/apk/debug/app-debug.apk ../../canal-apk/CanalDeck-v0.2-beta.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../../canal-apk/CanalDeck-Personal-v0.3.1-beta.apk
           cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk ../../canal-apk/tests.apk
           cd ../../canal-apk
-          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs CanalDeck-v0.2-beta.apk > APK-VERIFY.txt
-          sha256sum CanalDeck-v0.2-beta.apk > SHA256SUMS.txt
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs CanalDeck-Personal-v0.3.1-beta.apk > APK-VERIFY.txt
+          sha256sum CanalDeck-Personal-v0.3.1-beta.apk > SHA256SUMS.txt
           git -C .. rev-parse HEAD > SOURCE-COMMIT.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: canaldeck-apk
+          name: canaldeck-personal-apk
           path: canal-apk/
           if-no-files-found: error
           retention-days: 14
@@ -68,7 +68,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: canaldeck-tests
+          name: canaldeck-personal-tests
           path: |
             apps/canaldeck/build-ci.log
             apps/canaldeck/app/build/test-results/testDebugUnitTest/*.xml
@@ -89,7 +89,7 @@ jobs:
           java-version: '17'
       - uses: actions/download-artifact@v4
         with:
-          name: canaldeck-apk
+          name: canaldeck-personal-apk
           path: canal-apk
       - name: KVM
         run: |
@@ -109,6 +109,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: canaldeck-emulator
+          name: canaldeck-personal-emulator
           path: canal-device/
           retention-days: 14

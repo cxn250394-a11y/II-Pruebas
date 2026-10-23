@@ -1,6 +1,6 @@
-# CanalDeck 0.2 beta — cliente propio de Telegram
+# CanalDeck Personal 0.3.1 beta — cliente propio de Telegram (rama aislada)
 
-Cliente Android nativo con TDLib. No es Nicegram, no está afiliado a Telegram y no es el lector Centro de Alertas. Una cuenta real con identidad propia de aplicación. Código recuperado de `projects/canal` (PR #3) y aislado aquí; ningún otro producto se modifica.
+Cliente Android nativo con TDLib. No es Nicegram, no está afiliado a Telegram y no es el lector Centro de Alertas. Una cuenta real con identidad propia de aplicación. Esta edición Personal tiene paquete Android independiente (`mx.charly.canal.personal`) y requiere su propia sesión local; no reemplaza ni migra el CanalDeck 0.2 o el canal experimental Pick$. Código recuperado de `projects/canal` (PR #3) y aislado aquí; ningún otro producto se modifica.
 
 ## Funciones implementadas
 
@@ -11,6 +11,9 @@ Cliente Android nativo con TDLib. No es Nicegram, no está afiliado a Telegram y
 - Mensajes realmente visibles se comunican a Telegram como vistos. No ofrece modo fantasma ni altera la semántica de lectura.
 - Fotos y reproducción básica de audio/video dentro de la app, descarga explícita y acotada. No se exporta, reenvía o copia contenido protegido. Contenido autodestructivo no soportado.
 - Avisos propios por conversación: apagados, todas las publicaciones o palabras clave. Horario silencioso local, vista previa oculta de fábrica y controles de sonido de Android por conversación.
+- **Prioridad personal por cuenta/chat-ID:** categorías Prioritarios y Prioritarios nuevos, orden prioritarios → favoritos → recientes, marcación independiente de favoritos y carpetas.
+- **Avisos Android separados:** conversaciones prioritarias en grupo propio, canal de alerta alta y mensajes normales separados. La preferencia Prioridad NO habilita avisos apagados. Android/HyperOS conserva el control final de banners, agrupación y retrasos.
+- **Diagnóstico aproximado:** solo guarda hora y edad observada entre fecha del mensaje y solicitud local de aviso (no texto ni IDs); no demuestra cuándo el servidor, la red o Android entregó el mensaje.
 - Inicio guiado y demo explícito en memoria sin cuenta. Solo las pantallas sin sesión y el demo permiten capturas; las pantallas de sesión están protegidas con FLAG_SECURE.
 
 ## Privacidad y límites
@@ -51,3 +54,9 @@ Firma debug temporal del runner: no es una clave de producción persistente. Ant
 - https://developer.android.com/develop/background-work/services/fgs/service-types#remote-messaging
 
 TDLib: Boost 1.0. TDL Coroutines y Kotlin Coroutines: Apache 2.0. Textos de licencia incluidos en assets/licenses. Código y CI solo en II-Pruebas. Main, los otros PR y repositorios externos permanecen intactos. Sin merge/deploy, apuestas, compras ni mensajes reales en pruebas.
+
+## Límite de este carril
+
+Esta rama se basa en el cliente estable v0.2, **no en el PR #5 v0.3 ni en el puente Pick$ v0.4+**. Solo mejora el uso personal. Sin reenvío de picks, servicios de apuestas, acceso a RS1000, alteración de main, envío automático ni uso de tokens en CI. La v0.3 Pick$ existe como PR Draft, no como Release. El repositorio sigue público; no subir sesiones ni credenciales.
+
+Firma debug efímera: al ser otro applicationId se instala en paralelo, pero no conserva la sesión anterior. Pruebas CI y emulador no certifican inicio de sesión real ni la recepción en el POCO/HyperOS 3.
