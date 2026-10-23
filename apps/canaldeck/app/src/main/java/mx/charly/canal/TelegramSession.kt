@@ -133,7 +133,7 @@ class TelegramSession private constructor(private val context: Context) {
                 filesDirectory = "${context.filesDir}/telegram/files", databaseEncryptionKey = v.databaseKey(),
                 useFileDatabase = true, useChatInfoDatabase = true, useMessageDatabase = true, useSecretChats = false,
                 apiId = id.toInt(), apiHash = hash, systemLanguageCode = "es", deviceModel = Build.MODEL,
-                systemVersion = "Android ${Build.VERSION.RELEASE}", applicationVersion = "CanalDeck 0.2 beta")
+                systemVersion = "Android ${Build.VERSION.RELEASE}", applicationVersion = "CanalDeck Personal 0.3.2 beta")
             if (r is TdlResult.Failure) { configured = false; failure(r) }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { configured = false; status = "No se pudo abrir la configuración cifrada. Revisa tu identidad de aplicación."; notifyUi() }
     }
@@ -195,6 +195,33 @@ class TelegramSession private constructor(private val context: Context) {
             is TdlResult.Success -> callback(r.result.messages.filterNotNull(),null)
             is TdlResult.Failure -> callback(null,errorText(r.code,r.message))
         } }
+    }
+    /** Official TDLib resolution, not guessed Telegram chat IDs. */
+    fun resolvePublicLink(username: String, messageId: Long?, callback: (Long?, String?) -> Unit) {
+        if (!ready || closing || !Regex("[A-Za-z][A-Za-z0-9_]{4,31}").matches(username)) {
+            callback(null,"No hay sesión activa o nombre de canal inválido")
+            return
+        }
+        scope.launch {
+            when(val result=client.searchPublicChat(username=username)) {
+                is TdlResult.Success -> {
+                    val chat=result.result
+                    chats[chat.id]=chat
+                    notifyUi()
+                    callback(chat.id,null)
+                }
+                is TdlResult.Failure -> callback(null,errorText(result.code,result.message))
+            }
+        }
+    }
+    fun fetchLinkedMessage(chatId: Long, messageId: Long, callback: (Message?) -> Unit) {
+        if(!ready || closing || messageId<=0)return callback(null)
+        scope.launch {
+            when(val r=client.getMessage(chatId=chatId,messageId=messageId)) {
+                is TdlResult.Success -> callback(r.result)
+                else -> callback(null)
+            }
+        }
     }
     fun showChat(id: Long) {
         if (visibleChat == id) return

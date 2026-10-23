@@ -56,6 +56,11 @@ class CanalActivity : Screen() {
     private val drafts = mutableMapOf<Pair<Long,Long>,String>()
     private var mediaPlayer: MediaPlayer? = null
     private var mediaDialog: AlertDialog? = null
+    private var protectedMedia = false
+    private var backupPassword: CharArray? = null
+    private var backupMode = ""
+    private val exportCode = 551
+    private val importCode = 552
     private val uiChange = Runnable { refreshState() }
     private val readVisible = Runnable { acknowledgeVisible() }
     private val changed: () -> Unit = { handler.removeCallbacks(uiChange); handler.postDelayed(uiChange,120) }
@@ -102,8 +107,14 @@ class CanalActivity : Screen() {
         }
     }
     private fun secure() {
-        if(screen=="credentials"||screen=="login"||(!demo&&TelegramSession.current!=null))window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        val current = TelegramSession.current
+        val chat=current?.chats?.get(activeChat)
+        val protectedChat=screen=="history" && (chat?.hasProtectedContent==true || chat?.type is ChatTypeSecret)
+        val sensitive=screen=="credentials" || screen=="login" || protectedMedia || protectedChat
+        val allow= !sensitive && (demo || current==null || org.screenshots)
+        allowDialogScreenshots=allow
+        if(allow) window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
     private fun saveDraft(){val c=composer;if(screen=="history"&&c!=null)drafts[(TelegramSession.current?.accountId?:0) to activeChat]=c.text.toString()}
     private fun page(name:String,title:String,subtitle:String){
@@ -120,7 +131,7 @@ class CanalActivity : Screen() {
         },LinearLayout.LayoutParams(0,-2,1f))};root.addView(n)
     }
     private fun home(){
-        page("home","CanalDeck","Tu Telegram y tus canales · Personal 0.3.1")
+        page("home","CanalDeck","Tu Telegram y tus canales · Personal 0.3.2")
         card("Tus canales, sin perder lo nuevo","Cliente propio con TDLib. Una cuenta real, carpetas locales, favoritos, lectura de canales y mensajes de texto. No es la aplicación Nicegram ni una app oficial de Telegram.")
         statusLabel=label(TelegramSession.current?.let{if(it.ready)"${it.accountName} · ${it.network}" else it.status} ?: "Sin sesión iniciada",15f,accent)
         button(if(TelegramSession.current?.ready==true)"Abrir mis conversaciones" else "Empezar · conectar mi cuenta",true){demo=false;if(TelegramSession.current?.ready==true)chats()else connect()}
@@ -248,9 +259,13 @@ class CanalActivity : Screen() {
         org.folders().forEach{(id,name)->
             val count=TelegramSession.current?.chats?.keys?.count{org.folder(it)==id}?:0
             card(name,"$count conversaciones cargadas"){folder=id;kind="all";chats()}
-            button("Editar «$name»"){dialog().setItems(arrayOf("Cambiar nombre","Eliminar carpeta")){_,choice->
-                if(choice==0)prompt("Nuevo nombre"){n->if(org.renameFolder(id,n))folders()else toast("Nombre duplicado o inválido")}
-                else confirm("Eliminar carpeta","Solo elimina esta carpeta local; no borra chats, mensajes ni favoritos."){org.deleteFolder(id);if(folder==id)folder="*";folders()}
+            button("Orden y opciones · $name"){dialog().setItems(arrayOf("↑ Subir", "↓ Bajar", "Cambiar nombre", "Eliminar carpeta")){_,choice->
+                when(choice) {
+                    0 -> { if(!org.moveFolder(id,-1))toast("Ya es la primera carpeta");folders() }
+                    1 -> { if(!org.moveFolder(id,1))toast("Ya es la última carpeta");folders() }
+                    2 -> prompt("Nuevo nombre"){n->if(org.renameFolder(id,n))folders()else toast("Nombre duplicado o inválido")}
+                    else -> confirm("Eliminar carpeta","Solo elimina esta carpeta local; no borra chats, mensajes ni favoritos."){org.deleteFolder(id);if(folder==id)folder="*";folders()}
+                }
             }.show()}
         }
         label("Para mover un canal: mantén pulsada su tarjeta → Carpeta. Puedes poner nombres como Trabajo, Música o Deportes.",13f,soft);nav()
