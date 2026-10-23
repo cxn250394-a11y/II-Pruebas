@@ -30,7 +30,6 @@ object StatsWatch {
         return league.lowercase(Locale.ROOT) + ":" + season
     }
     fun teamKey(team: String): String {
-        require(team.isNotBlank() && team.length <= 120)
         return Normalizer.normalize(team.trim(), Normalizer.Form.NFC).lowercase(Locale.ROOT)
     }
     fun diff(old: List<Match>, fresh: List<Match>, followed: (Match) -> Boolean): List<ScoreObservation> {

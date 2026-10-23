@@ -23,6 +23,7 @@ class WatchPrefs(context: Context) {
         return added
     }
     fun toggleTeam(scope:String, name:String):Boolean {
+        require(name.isNotBlank() && name.length<=120)
         val key=StatsWatch.teamKey(name)
         val current=teams(scope).toMutableSet()
         val added=if(current.add(key))true else {current.remove(key);false}
@@ -40,15 +41,13 @@ class WatchHistory(context:Context) {
         private const val MAX_ROWS=300
         private const val DAYS_30=30L*24*60*60*1000
     }
-    private fun parse(raw:JSONArray):List<WatchRecord> = (0 until raw.length()).mapNotNull { i ->
-        val o=raw.optJSONObject(i) ?: return@mapNotNull null
-        try {
-            val kind=UpdateKind.valueOf(o.getString("kind"))
-            fun nullable(key:String):Int?=if(!o.has(key)||o.isNull(key))null else o.getInt(key).takeIf { it>=0 }
-            WatchRecord(o.getString("scope"),o.getLong("at"),o.getString("source"),
-                ScoreObservation(o.getString("id"),o.getString("home"),o.getString("away"),
-                    nullable("oldH"),nullable("oldA"),nullable("newH"),nullable("newA"),kind))
-        }catch(_:Exception){null}
+    private fun parse(raw:JSONArray):List<WatchRecord> = (0 until raw.length()).map { i ->
+        val o=raw.optJSONObject(i) ?: error("Invalid history record")
+        val kind=UpdateKind.valueOf(o.getString("kind"))
+        fun nullable(key:String):Int?=if(!o.has(key)||o.isNull(key))null else o.getInt(key).also { require(it>=0) }
+        WatchRecord(o.getString("scope"),o.getLong("at"),o.getString("source"),
+            ScoreObservation(o.getString("id"),o.getString("home"),o.getString("away"),
+                nullable("oldH"),nullable("oldA"),nullable("newH"),nullable("newA"),kind))
     }
     @Synchronized fun all(scope:String):List<WatchRecord> =
         parse(file.read()).filter{it.scope==scope}.sortedByDescending{it.observedAt}
