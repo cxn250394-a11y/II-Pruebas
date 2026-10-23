@@ -5,7 +5,7 @@ import java.net.URI
 /** Only public username links. Invite, /c/, paid, protected and private links are never guessed. */
 data class PublicTelegramLink(val username: String, val messageId: Long?)
 object MessageLinks {
-    fun public(link: String): PublicTelegramLink? {
+    fun parsePublic(link: String): PublicTelegramLink? {
         return try {
             if (link.length > 2048) return null
             val u = URI(link)

@@ -520,23 +520,40 @@ class CanalActivity : Screen() {
         val id=activeChat;val s=TelegramSession.current?:return
         confirm("Descargar y abrir","Se descargará este archivo a la carpeta privada de CanalDeck. Límite: ${cap/1_000_000} MB. Puede consumir datos móviles."){
             toast("Descargando archivo…")
-            s.media(file.id,cap){path->if(!isDestroyed&&foreground&&TelegramSession.current===s&&activeChat==id){if(path==null)toast("La descarga no se completó o excede el límite")else displayMedia(path,c is MessagePhoto,c is MessageVideo)}}
+            s.media(file.id,cap){path->if(!isDestroyed&&foreground&&TelegramSession.current===s&&activeChat==id){if(path==null)toast("La descarga no se completó o excede el límite")else displayMedia(path,c is MessagePhoto,c is MessageVideo,m.canBeSaved && s.chats[id]?.hasProtectedContent != true)}}
         }
     }
-    private fun displayMedia(path:String,photo:Boolean,video:Boolean){
+    private fun displayMedia(path:String,photo:Boolean,video:Boolean,canAnalyze:Boolean){
         try{
             val f=java.io.File(path);require(f.canonicalPath.startsWith(filesDir.canonicalPath+"/")&&f.isFile)
             mediaDialog?.dismiss()
+            protectedMedia = !canAnalyze
+            secure()
             if(photo){val opt=android.graphics.BitmapFactory.Options().apply{inJustDecodeBounds=true};android.graphics.BitmapFactory.decodeFile(path,opt);require(opt.outWidth>0&&opt.outHeight>0);var sample=1;while(opt.outWidth/sample>1600||opt.outHeight/sample>1600)sample*=2;opt.inJustDecodeBounds=false;opt.inSampleSize=sample
                 val bmp=android.graphics.BitmapFactory.decodeFile(path,opt)?:error("Invalid photo");val image=ImageView(this).apply{adjustViewBounds=true;setImageBitmap(bmp)}
-                mediaDialog=dialog().setView(image).setPositiveButton("Cerrar",null).create()
+                val builder=dialog().setTitle("Foto del canal").setView(image).setPositiveButton("Cerrar",null)
+                if(canAnalyze)builder.setNeutralButton("Leer apuesta (OCR local)"){_,_->
+                    LocalBetText.read(bmp){recognized,error->
+                        if(isDestroyed||!foreground)return@read
+                        if(recognized.isNullOrBlank()){
+                            info("Análisis de imagen",error ?: "No se reconoció texto legible");return@read
+                        }
+                        val labels=LocalBetText.labels(recognized)
+                        val heading=if(labels.isEmpty())"No se identificaron mercados"else labels.joinToString(", ")
+                        dialog().setTitle("Texto leído · sin validar")
+                            .setMessage("Posibles campos: $heading\\n\\n$recognized\\n\\nComprueba casa, partido, selección, cuota y vigencia. Esta lectura no confirma la apuesta ni calcula valor esperado. No se reenvió nada.")
+                            .setPositiveButton("Cerrar",null).show()
+                    }
+                }
+                mediaDialog=builder.create()
+                mediaDialog?.setOnDismissListener{protectedMedia=false;secure()}
             }else if(video){val v=VideoView(this);val control=MediaController(this);v.setMediaController(control);v.setVideoURI(Uri.fromFile(f));v.setOnPreparedListener{v.start()};v.setOnErrorListener{_,_,_->toast("El teléfono no pudo reproducir este formato");true}
-                mediaDialog=dialog().setView(v).setPositiveButton("Cerrar",null).create();mediaDialog?.setOnDismissListener{v.stopPlayback()}
+                mediaDialog=dialog().setView(v).setPositiveButton("Cerrar",null).create();mediaDialog?.setOnDismissListener{v.stopPlayback();protectedMedia=false;secure()}
             }else{val box=column();val toggle=Button(this).apply{text="Pausar / continuar";setOnClickListener{mediaPlayer?.let{if(it.isPlaying)it.pause()else it.start()}}};box.addView(toggle)
                 mediaPlayer=MediaPlayer().apply{setDataSource(path);setOnPreparedListener{it.start()};setOnErrorListener{_,_,_->toast("Audio no compatible");true};prepareAsync()}
-                mediaDialog=dialog().setTitle("Audio de Telegram").setView(box).setPositiveButton("Cerrar",null).create();mediaDialog?.setOnDismissListener{mediaPlayer?.release();mediaPlayer=null}
+                mediaDialog=dialog().setTitle("Audio de Telegram").setView(box).setPositiveButton("Cerrar",null).create();mediaDialog?.setOnDismissListener{mediaPlayer?.release();mediaPlayer=null;protectedMedia=false;secure()}
             }
             mediaDialog?.show()
-        }catch(_:Exception){mediaPlayer?.release();mediaPlayer=null;toast("No se pudo abrir el contenido de forma segura")}
+        }catch(_:Exception){protectedMedia=false;secure();mediaPlayer?.release();mediaPlayer=null;toast("No se pudo abrir el contenido de forma segura")}
     }
 }
