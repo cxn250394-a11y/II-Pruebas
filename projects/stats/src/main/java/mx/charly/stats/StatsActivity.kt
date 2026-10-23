@@ -63,11 +63,43 @@ class StatsActivity:Screen(){
     holder.addView(b,android.widget.LinearLayout.LayoutParams(-1,-2))
   }
  }
- private fun refresh(){if(busy)return;val now=System.currentTimeMillis();if(importSource=="OpenLigaDB"&&now-fetched<60000){toast("Ya se descargó hace menos de un minuto");return}
-  busy=true;toast("Consultando la fuente pública")
-  io.execute{try{val new=Feed.get("/getmatchdata/$league/$season");val parsed=Feed.parse(new);cache.write(new);val stamp=System.currentTimeMillis();prefs.edit().putString("league",league).putInt("season",season).putLong("fetched",stamp).putString("source","OpenLigaDB").apply()
-   runOnUiThread{if(!isDestroyed){raw=new;matches=parsed;fetched=stamp;importSource="OpenLigaDB";busy=false;page=0;home()}}
-  }catch(e:Exception){runOnUiThread{if(!isDestroyed){busy=false;toast("No se actualizó: ${e.message?.take(140)}. Se conserva la caché.");home()}}}}
+ private fun refresh(){
+  if(busy)return
+  val now=System.currentTimeMillis()
+  val leagueAtRequest=league;val seasonAtRequest=season;val requestedScope=scope()
+  val oldScope=runCatching{
+    StatsWatch.scope(prefs.getString("league","bl1")?:"bl1",prefs.getInt("season",seasonAtRequest))
+  }.getOrNull()
+  if(importSource=="OpenLigaDB" && requestedScope==oldScope && now-fetched<60_000){
+    toast("Ya se descargó hace menos de un minuto");return
+  }
+  val compare=importSource=="OpenLigaDB" && oldScope==requestedScope && fetched>0L
+  val previous=matches.toList()
+  busy=true;toast("Consultando fuente pública · no es señal en vivo")
+  io.execute {
+   try{
+    val downloaded=Feed.get("/getmatchdata/$leagueAtRequest/$seasonAtRequest")
+    val parsed=Feed.parse(downloaded)
+    val observed=if(compare)StatsWatch.diff(previous,parsed){ m->
+       watch.isTracked(requestedScope,m)
+    }else emptyList()
+    cache.write(downloaded)
+    val stamp=System.currentTimeMillis()
+    val storedHistory=try{changes.append(requestedScope,"OpenLigaDB",stamp,observed);true}catch(_:Exception){false}
+    prefs.edit().putString("league",leagueAtRequest).putInt("season",seasonAtRequest)
+      .putLong("fetched",stamp).putString("source","OpenLigaDB").apply()
+    runOnUiThread{
+      if(!isDestroyed){
+        raw=downloaded;matches=parsed;fetched=stamp;importSource="OpenLigaDB";busy=false;page=0
+        home()
+        if(observed.isNotEmpty())toast(observed.size.toString()+" cambios de seguidos observados"+
+          if(storedHistory)"" else " · no se pudo guardar el historial")
+      }
+    }
+   }catch(e:Exception){runOnUiThread{
+      if(!isDestroyed){busy=false;toast("No se actualizó: "+(e.message?.take(140)?:"error")+". Se conserva la caché.");home()}
+   }}
+  }
  }
  private fun choose(){layout("Fuentes y cobertura","Sin claves ni API contratada")
   label("Puedes consultar la oferta actual del proveedor. La existencia de una liga no garantiza que esté completa.",13f,soft)
