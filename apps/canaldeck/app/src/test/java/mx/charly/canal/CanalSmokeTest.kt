@@ -34,6 +34,18 @@ class CanalSmokeTest {
         val c=Robolectric.buildActivity(CanalActivity::class.java).create()
         try{val a=c.get();click(a,"Identidad de aplicación");assertTrue(a.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0);assertEquals(2,views(a.window.decorView).filterIsInstance<EditText>().size);assertTrue(views(a.window.decorView).filterIsInstance<EditText>().all{!it.isSaveEnabled});assertNull(TelegramSession.current)}finally{c.destroy()}
     }
+    @Test fun demoPriorityFilterShowsOnlyImportant() {
+        val c=Robolectric.buildActivity(CanalActivity::class.java).create()
+        try {
+            val a=c.get(); click(a,"Ver diseño")
+            val spinner=views(a.window.decorView).filterIsInstance<android.widget.Spinner>().first()
+            spinner.setSelection(6)
+            assertEquals(1,views(a.window.decorView).filterIsInstance<ListView>().single().adapter.count)
+            spinner.setSelection(7)
+            assertEquals(1,views(a.window.decorView).filterIsInstance<ListView>().single().adapter.count)
+            assertNull(TelegramSession.current)
+        } finally { c.destroy() }
+    }
     @Test fun rejectsMissingIdentity(){assertFalse(Vault.validApi("",""));assertFalse(Vault.validApi("0","a".repeat(32)));assertFalse(Vault.validApi("42","z".repeat(32)));assertTrue(Vault.validApi("42","a".repeat(32)))}
     @Test @Config(sdk=[35]) fun android35Welcome(){val c=Robolectric.buildActivity(CanalActivity::class.java).create();try{assertNotNull(c.get().findViewById<View>(android.R.id.content))}finally{c.destroy()}}
 }

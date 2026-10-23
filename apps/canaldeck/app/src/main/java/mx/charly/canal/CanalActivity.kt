@@ -280,7 +280,7 @@ class CanalActivity : Screen() {
                 if(mode!=NoticeMode.OFF&&Build.VERSION.SDK_INT>=33)requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),9)
                 toast("Preferencias guardadas")
             }.setNeutralButton("Sonido Android"){_,_->
-                val i=Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName).putExtra(Settings.EXTRA_CHANNEL_ID,ConnectionService.channel(id))
+                val i=Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName).putExtra(Settings.EXTRA_CHANNEL_ID,ConnectionService.channel(id,org.important(id)))
                 try{startActivity(i)}catch(_:Exception){toast("El canal de Android aparece después de su primer aviso")}
             }.show()
     }
