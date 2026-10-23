@@ -19,7 +19,7 @@ grep -q 'OK (3 tests)' canal-device/normal-instrumentation.txt
 ! grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|Process crashed' canal-device/normal-instrumentation.txt
 adb exec-out run-as mx.charly.canal cat files/variant-isolation-evidence.json > canal-device/normal-variant-isolation.json
 adb shell am instrument -w mx.charly.canal.offline.test/androidx.test.runner.AndroidJUnitRunner | tee canal-device/offline-instrumentation.txt
-grep -q 'OK (28 tests)' canal-device/offline-instrumentation.txt
+grep -q 'OK (31 tests)' canal-device/offline-instrumentation.txt
 ! grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|Process crashed' canal-device/offline-instrumentation.txt
 adb exec-out run-as mx.charly.canal.offline cat files/variant-isolation-evidence.json > canal-device/offline-variant-isolation.json
 python3 - <<'PY_VARIANT_EVIDENCE'
@@ -82,6 +82,20 @@ assert e['reopened_phase']=='COMPLETE'
 assert e['new_requests_after_reopen']==0 and e['duplicate_requests']==0
 print('PASS single integration Fake + SQLite; one original mapped to final ACK; reopened without replay; sent_real_messages=0')
 PY_SINGLE_EVIDENCE
+adb exec-out run-as mx.charly.canal.offline cat files/single-recovery-evidence.json > canal-device/single-recovery-evidence.json
+python3 - <<'PY_RECOVERY_EVIDENCE'
+import json
+with open('canal-device/single-recovery-evidence.json') as f:
+    e=json.load(f)
+assert e['compiled_real_output_enabled'] is False and e['offline_rehearsal_only'] is True
+assert e['account_connected'] is False and e['sent_real_messages']==0
+assert [case['pending_stage'] for case in e['cases']]==['HEADER','MEDIA']
+for case in e['cases']:
+    assert case['reopened_phase']=='UNKNOWN' and case['late_ack_kept_unknown'] is True
+    assert case['durable_pause_survived'] is True
+    assert case['requests_after_reopen']==0 and case['refreshes_after_reopen']==0
+print('PASS RECOVERY Fake Android SQLite; HEADER/MEDIA UNKNOWN sticky; durable pause; zero replay; sent_real_messages=0')
+PY_RECOVERY_EVIDENCE
 adb exec-out run-as mx.charly.canal.offline cat files/canaldeck-demo.png > canal-device/demo.png
 adb shell am start -W -n mx.charly.canal.offline/mx.charly.canal.CanalActivity | tee canal-device/launch.txt
 sleep 2

@@ -29,7 +29,10 @@ data class SingleRelayCommand(
     val request: AsyncRelayRequest,
     val scope: AsyncRelayScope,
     val sourceChatId: Long,
-    val header: String? = null
+    val header: String? = null,
+    /** Final destination message identity and exact transient text; MEDIA only. */
+    val confirmedHeaderMessageId: Long? = null,
+    val expectedHeaderText: String? = null
 )
 
 sealed class SingleRelayDispatchResult {
@@ -41,6 +44,8 @@ sealed class SingleRelayDispatchResult {
 interface SingleRelayPort {
     val mode: SingleRelayPortMode
     fun refresh(observed: SingleRelayObserved, callback: (SingleRelayFreshState?) -> Unit)
+    /** Read the final destination header on the same client. Absence/ambiguity fails closed. */
+    fun checkHeaderExists(command: SingleRelayCommand, callback: (Boolean) -> Unit) { callback(false) }
     fun dispatch(command: SingleRelayCommand, callback: (SingleRelayDispatchResult) -> Unit)
 }
 

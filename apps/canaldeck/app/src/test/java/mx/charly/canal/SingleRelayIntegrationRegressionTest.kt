@@ -56,6 +56,12 @@ class SingleRelayIntegrationRegressionTest {
             refreshes++
             if (deferRefresh) deferredRefreshes += callback else callback(fresh)
         }
+        override fun checkHeaderExists(command: SingleRelayCommand, callback: (Boolean) -> Unit) {
+            assertEquals(AsyncRelayStage.MEDIA, command.request.stage)
+            assertTrue(requireNotNull(command.confirmedHeaderMessageId) > 0L)
+            assertFalse(command.expectedHeaderText.isNullOrBlank())
+            callback(true) // Explicit Fake destination state; no provider is queried.
+        }
         override fun dispatch(command: SingleRelayCommand, callback: (SingleRelayDispatchResult) -> Unit) {
             commands += command
             if (reject == command.request.stage) callback(SingleRelayDispatchResult.Rejected)

@@ -2,7 +2,7 @@
   "schema_version": 2,
   "runtime": "Gradle Android JVM/Robolectric",
   "totals": {
-    "tests": 641,
+    "tests": 753,
     "failures": 0,
     "errors": 0,
     "skipped": 0
@@ -12,7 +12,7 @@
     "normal": {
       "task": "testNormalDebugUnitTest",
       "totals": {
-        "tests": 319,
+        "tests": 375,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -62,7 +62,7 @@
         },
         {
           "name": "mx.charly.canal.ExistingClientRelayAckRouterTest",
-          "tests": "9",
+          "tests": "19",
           "failures": "0",
           "errors": "0",
           "skipped": "0"
@@ -76,7 +76,7 @@
         },
         {
           "name": "mx.charly.canal.ExistingClientRelayPortTest",
-          "tests": "4",
+          "tests": "8",
           "failures": "0",
           "errors": "0",
           "skipped": "0"
@@ -173,6 +173,13 @@
           "skipped": "0"
         },
         {
+          "name": "mx.charly.canal.SingleRelayCommandLeaseTest",
+          "tests": "4",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0"
+        },
+        {
           "name": "mx.charly.canal.SingleRelayControllerTest",
           "tests": "20",
           "failures": "0",
@@ -180,8 +187,36 @@
           "skipped": "0"
         },
         {
+          "name": "mx.charly.canal.SingleRelayDisconnectRecoveryTest",
+          "tests": "4",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0"
+        },
+        {
+          "name": "mx.charly.canal.SingleRelayHeaderIntegrityTest",
+          "tests": "13",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0"
+        },
+        {
           "name": "mx.charly.canal.SingleRelayIntegrationRegressionTest",
           "tests": "15",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0"
+        },
+        {
+          "name": "mx.charly.canal.SingleRelayRecoveryGateTest",
+          "tests": "14",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0"
+        },
+        {
+          "name": "mx.charly.canal.SingleRelayRecoveryPersistenceTest",
+          "tests": "7",
           "failures": "0",
           "errors": "0",
           "skipped": "0"
@@ -212,7 +247,7 @@
     "offline": {
       "task": "testOfflineDebugUnitTest",
       "totals": {
-        "tests": 322,
+        "tests": 378,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -269,7 +304,7 @@
         },
         {
           "name": "mx.charly.canal.ExistingClientRelayAckRouterTest",
-          "tests": "9",
+          "tests": "19",
           "failures": "0",
           "errors": "0",
           "skipped": "0"
@@ -283,7 +318,7 @@
         },
         {
           "name": "mx.charly.canal.ExistingClientRelayPortTest",
-          "tests": "4",
+          "tests": "8",
           "failures": "0",
           "errors": "0",
           "skipped": "0"
@@ -380,6 +415,13 @@
           "skipped": "0"
         },
         {
+          "name": "mx.charly.canal.SingleRelayCommandLeaseTest",
+          "tests": "4",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0"
+        },
+        {
           "name": "mx.charly.canal.SingleRelayControllerTest",
           "tests": "20",
           "failures": "0",
@@ -387,8 +429,36 @@
           "skipped": "0"
         },
         {
+          "name": "mx.charly.canal.SingleRelayDisconnectRecoveryTest",
+          "tests": "4",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0"
+        },
+        {
+          "name": "mx.charly.canal.SingleRelayHeaderIntegrityTest",
+          "tests": "13",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0"
+        },
+        {
           "name": "mx.charly.canal.SingleRelayIntegrationRegressionTest",
           "tests": "15",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0"
+        },
+        {
+          "name": "mx.charly.canal.SingleRelayRecoveryGateTest",
+          "tests": "14",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0"
+        },
+        {
+          "name": "mx.charly.canal.SingleRelayRecoveryPersistenceTest",
+          "tests": "7",
           "failures": "0",
           "errors": "0",
           "skipped": "0"

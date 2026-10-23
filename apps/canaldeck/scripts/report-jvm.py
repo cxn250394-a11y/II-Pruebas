@@ -13,7 +13,7 @@ for flavor in ("normal", "offline"):
         r=ET.parse(p).getroot()
         suites.append({k:r.attrib.get(k,"") for k in ("name","tests","failures","errors","skipped")})
     totals={k:sum(int(s[k] or 0) for s in suites) for k in ("tests","failures","errors","skipped")}
-    expected = {"normal":319, "offline":322}[flavor]
+    expected = {"normal":375, "offline":378}[flavor]
     assert totals["tests"]==expected and totals["failures"]==0 and totals["errors"]==0 and totals["skipped"]==0, (flavor, totals)
     variants[flavor]={"task":task,"totals":totals,"suites":suites}
     print("JVM_EVIDENCE_"+flavor.upper()+"="+json.dumps(totals,sort_keys=True))

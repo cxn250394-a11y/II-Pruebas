@@ -8,7 +8,7 @@ import java.util.UUID
 
 /**
  * Prepared integration on TelegramSession's single client and update stream. The installed
- * candidate cannot log in; native admission and provider calls are independently compiled OFF.
+ * offline flavor cannot log in; native admission and provider calls remain compiled OFF.
  */
 internal class ExistingClientRelayBridge(
     context: Context,
@@ -26,25 +26,40 @@ internal class ExistingClientRelayBridge(
     private val acknowledgements = AsyncRelayDatabase(application, "canaldeck-single-ack.db")
     private val admission = ExistingClientRelayAdmission(observations)
     private val router = ExistingClientRelayAckRouter()
+    private val recovery = SingleRelayRecoveryGate(object : SingleRelayRecoveryStore {
+        override fun read(accountId: Long) = RelayPreferences(application, accountId).recoveryPause()
+        override fun compareAndSet(accountId: Long, expected: SingleRelayRecoveryToken?, next: SingleRelayRecoveryToken?) =
+            RelayPreferences(application, accountId).compareAndSetRecoveryPause(expected, next)
+    })
     private var account = 0L
     private var sessionId = UUID.randomUUID().toString()
     private var connected = false
     private var connectionStartedUnix = 0L
     private var revision = -1L
+    private var destination = 0L
+    private var outputWasEnabled = false
     private var closed = false
     private var routerFailureHandled = false
-    private val calls = TdlSingleRelayCalls(client, adapter) { scope ->
+    private val calls = TdlSingleRelayCalls(client, adapter, stillAuthorized = { scope ->
         currentContext(0L)?.let { it.scope == scope && it.connected && it.config.userEnabled } == true
-    }
+    }, commandActive = { command ->
+        currentContext(command.sourceChatId)?.let { current ->
+            current.scope == command.scope && controller.isRequestActive(command, current.configurationRevision)
+        } == true
+    })
     private val port = ExistingClientRelayPort(calls, ::currentContext, launch,
         beforeQueue = router::begin,
         afterQueued = { response ->
             val routed = router.bind(response)
-            if (routed.uncertain) stopRouter()
+            if (routed.uncertain && router.stopped) stopRouter()
             else routed.updates.forEach { controller.onUpdate(it) }
             !routed.uncertain
         },
-        queueUncertain = { command -> if (router.uncertain(command.request.requestId).uncertain) stopRouter() })
+        queueUncertain = { command ->
+            if (router.uncertain(command.request.requestId).uncertain) {
+                if (router.stopped) stopRouter() else disconnect("PENDING_IO_UNCERTAIN")
+            }
+        }, queueNotInvoked = { command -> router.cancelBeforeInvocation(command.request.requestId) })
     private val controller: SingleRelayController by lazy { SingleRelayController(acknowledgements, port, admission, clockMillis) }
 
     private fun prefs() = RelayPreferences(application, account)
@@ -58,8 +73,11 @@ internal class ExistingClientRelayBridge(
             RelaySourceBinding(account, source, chat.title, policy, true)
         })
 
-    private fun currentContext(source: Long): ExistingClientRelayContext? {
+    private fun currentContext(source: Long): ExistingClientRelayContext? = contextSnapshot(source, false)
+
+    private fun contextSnapshot(source: Long, observePaused: Boolean): ExistingClientRelayContext? {
         if (closed || router.stopped || !connected || !usableSession() || currentAccount() != account || account <= 0L) return null
+        if (!observePaused && recovery.isPaused(account)) return null
         val preferences = prefs()
         val config = config(preferences)
         val destination = config.destinationChatId ?: return null
@@ -87,9 +105,22 @@ internal class ExistingClientRelayBridge(
             account = nextAccount; sessionId = UUID.randomUUID().toString()
             connectionStartedUnix = clockMillis() / 1000L
             if (connectionStartedUnix <= 0L || nextRevision < 0L || nextRevision == Long.MAX_VALUE) return
+            val preferences = prefs()
+            destination = preferences.destinationChatId()
+            outputWasEnabled = preferences.enabled
+            val priorScope = acknowledgements.processRecoveryScope(account)
+            if (priorScope != null && !recovery.isPaused(account)) {
+                // Prior-process ACK identities are unavailable. Persist an explicitly foreign
+                // lifetime before turning WAITING into sticky UNKNOWN; no automatic unpause.
+                val token = SingleRelayRecoveryToken(priorScope, nextRevision,
+                    UUID.randomUUID().toString(), "unproven-prior-process:" + UUID.randomUUID())
+                check(preferences.compareAndSetRecoveryPause(null, token))
+            }
             acknowledgements.recoverPending(account)
             connected = true; revision = nextRevision
         }
+        recovery.observeTransport(contextSnapshot(0L, true))
+        if (recovery.isPaused(account)) { admission.reset(); return }
         val preferences = prefs()
         preferences.sources().keys.forEach { source ->
             if (preferences.sourcePolicy(source) !in RelaySettingsSelection.allowedPolicies) return@forEach
@@ -106,9 +137,12 @@ internal class ExistingClientRelayBridge(
         when (update) {
             is UpdateConnectionState -> if (update.state !is ConnectionStateReady) disconnect("CONNECTION_CHANGED")
             is UpdateAuthorizationState -> if (update.authorizationState !is AuthorizationStateReady) disconnect("AUTH_CHANGED")
-            is UpdateMessageContent -> invalidateSource(update.chatId, update.messageId)
-            is UpdateMessageEdited -> invalidateSource(update.chatId, update.messageId)
-            is UpdateDeleteMessages -> if (update.isPermanent) update.messageIds.forEach { invalidateSource(update.chatId, it) }
+            is UpdateMessageContent -> { invalidateSource(update.chatId, update.messageId); invalidateHeader(update.chatId, listOf(update.messageId)) }
+            is UpdateMessageEdited -> { invalidateSource(update.chatId, update.messageId); invalidateHeader(update.chatId, listOf(update.messageId)) }
+            is UpdateDeleteMessages -> if (update.isPermanent) {
+                update.messageIds.forEach { invalidateSource(update.chatId, it) }
+                invalidateHeader(update.chatId, update.messageIds.toList())
+            }
             else -> Unit
         }
     }
@@ -126,7 +160,7 @@ internal class ExistingClientRelayBridge(
 
     private fun onLiveMessage(message: Message) {
         // Before admission, snapshot, config reads or SDK calls. Fake is a separate entry point.
-        if (!BuildConfig.PICK_RELAY_REAL_ENABLED || closed || !connected || router.stopped ||
+        if (!BuildConfig.PICK_RELAY_REAL_ENABLED || closed || !connected || router.stopped || recovery.isPaused(account) ||
             message.mediaAlbumId != 0L || message.isOutgoing || message.sendingState != null ||
             message.schedulingState != null || message.editDate != 0) return
         if (prefs().revision() != revision) { disconnect("CONFIG_CHANGED_BEFORE_INGRESS"); return }
@@ -138,10 +172,36 @@ internal class ExistingClientRelayBridge(
         if (account > 0L && messageId > 0L) controller.stop(RelayKey(account, chatId, "m:$messageId"), "SOURCE_MUTATED")
     }
 
+    private fun invalidateHeader(chatId: Long, ids: Collection<Long>) {
+        if (account > 0L && chatId == destination)
+            controller.onDestinationDeleted(AsyncRelayScope(account, sessionId, destination), ids)
+    }
+
     private fun disconnect(reason: String) {
-        if (account > 0L && connected) controller.invalidate(account, sessionId, reason)
+        if (account > 0L && connected) {
+            if (outputWasEnabled && destination != 0L) {
+                if (!recovery.isPaused(account)) recovery.pause(AsyncRelayScope(account, sessionId, destination), revision)
+                router.disconnected()
+            }
+            controller.invalidate(account, sessionId, reason)
+        }
         connected = false; admission.reset()
-        if (router.disconnected().uncertain) stopRouter()
+        recovery.observeTransport(null)
+        if (router.stopped) stopRouter()
+    }
+
+    /** No UI/automatic caller exists in this candidate; a future reviewed owner action only. */
+    fun resumeAfterExplicitConsent(consent: SingleRelayRecoveryConsent): Boolean {
+        if (!BuildConfig.PICK_RELAY_REAL_ENABLED || closed || router.stopped || account <= 0L) return false
+        val resumeUnix = clockMillis() / 1000L
+        if (resumeUnix <= 0L) return false
+        val current = contextSnapshot(0L, true)
+        recovery.observeTransport(current)
+        if (!recovery.resume(consent, current, router.canResume) { router.resume(account) }) return false
+        connectionStartedUnix = maxOf(connectionStartedUnix, resumeUnix)
+        admission.reset()
+        onSessionChanged() // Fresh baseline only, never replay a pre-disconnect intent.
+        return true
     }
 
     private fun stopRouter() {

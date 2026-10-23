@@ -44,14 +44,22 @@ assert "downloadFile(" not in adapter and "InputMessagePhoto(" not in adapter
 single = (code / 'TdlSingleRelayCalls.kt').read_text()
 assert 'TdlClient.create' not in single and 'allUpdates' not in single
 assert 'RelayRealGate.requireOpen(config.userEnabled)' in single and 'RelayRealGate.requireOpen(true)' in single
-assert 'sendCopy = false' in single and 'removeCaption = false' in single
+assert 'InputMessageForwarded(' in single and 'copyOptions = null' in single
+assert 'replyTo = headerReply(' in single and 'client.forwardMessages(' not in single
+assert 'client.getMessage(' in single and 'properties.result.canBeReplied' in single
+assert 'private val commandActive: (SingleRelayCommand) -> Boolean = { false }' in single
 assert 'paidMessageStarCount = 0' in single and 'allowPaidBroadcast = false' in single
 assert 'downloadFile(' not in single and 'InputMessagePhoto(' not in single
-for name in ['SingleRelayController.kt', 'SingleRelayModels.kt', 'SingleRelayPlanning.kt']:
+for name in ['SingleRelayController.kt', 'SingleRelayModels.kt', 'SingleRelayPlanning.kt', 'SingleRelayRecoveryGate.kt']:
     pure = (code / name).read_text()
     assert 'dev.g000sha256' not in pure and 'TdlClient' not in pure and 'TelegramSession' not in pure, name
 database = (code / "RelayDatabase.kt").read_text()
 for ddl in re.findall(r'CREATE TABLE [^"]+', database):
     assert not re.search(r'\b(body|caption|permalink|photo|message_text|media_bytes)\b', ddl), ddl
 assert "metric != RelayMetric.REAL_CONFIRMED" in database
+bridge = (code / 'ExistingClientRelayBridge.kt').read_text()
+assert 'if (!BuildConfig.PICK_RELAY_REAL_ENABLED || closed || router.stopped' in bridge
+assert 'recovery.resume(consent' in bridge and 'unproven-prior-process:' in bridge
+assert 'recovery.isPaused(account)' in bridge
+assert 'controller.isRequestActive(command, current.configurationRevision)' in bridge
 print("PASS: compiled OFF; one existing client and update stream; legacy preparation only; guarded native singleton seam; Fake has no SDK; no protected-media copy; metadata-only ledger")

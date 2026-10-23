@@ -1,5 +1,11 @@
 # CanalDeck 0.4.3 — variantes normal y laboratorio offline
 
+[Delta de integridad y recuperación de singles](docs/INTEGRIDAD_SINGLE_P2_Y_RECUPERACION.md):
+correcciones propuestas para P2-9B, P2-9C y P2-10A sobre #11 `85c616c`,
+conforme a Info `8c373cd`. Los HEAD auditados permanecen congelados. La salida
+real sigue compilada OFF; álbumes vivos HOLD. No se anticipa cierre de P2 ni
+ratificación; ninguna acción del dueño es necesaria ahora.
+
 Este candidato separa la app principal del laboratorio mediante flavors reales.
 Parte de PR #10 `6eb560a`; permanecen congelados #8 `3b32cb7`, #9 `6a40b20`, #10
 e Info #33 `e4a99e3` conforme a Info main `91993e4`.

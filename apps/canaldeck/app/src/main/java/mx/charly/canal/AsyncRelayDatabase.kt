@@ -183,6 +183,25 @@ class AsyncRelayDatabase(context: Context, name: String = "canaldeck-async-relay
         }
     }
 
+    /** Inspect before recovery mutates rows, so a crash cannot erase the need for a fence. */
+    internal fun requiresProcessRecoveryFence(accountId: Long): Boolean = processRecoveryScope(accountId) != null
+
+    internal fun processRecoveryScope(accountId: Long): AsyncRelayScope? {
+        require(accountId > 0L)
+        return readableDatabase.query("async_deliveries", arrayOf("phase", "metadata"),
+            "account=? AND phase!='COMPLETE'", arrayOf(accountId.toString()), null, null, null).use { c ->
+            var scope: AsyncRelayScope? = null
+            while (c.moveToNext()) {
+                val snapshot = decode(c.getString(1))
+                check(safe(snapshot) && snapshot.intent.scope.accountId == accountId)
+                // Even terminal UNKNOWN can hide an SDK request whose queued callback never
+                // returned. A new process has lost the router's lifetime identity tombstones.
+                if (snapshot.phase != AsyncRelayPhase.COMPLETE) scope = snapshot.intent.scope
+            }
+            scope
+        }
+    }
+
     private fun encode(snapshot: AsyncRelaySnapshot): String {
         val intent = snapshot.intent
         val scope = intent.scope

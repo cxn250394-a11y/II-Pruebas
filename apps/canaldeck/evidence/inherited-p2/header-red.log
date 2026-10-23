@@ -1,0 +1,13 @@
+JUnit version 4.13.2
+.E
+Time: 0.144
+There was 1 failure:
+1) aMissingFinalHeaderMustNotBeFollowedByAnOriginalPhoto(mx.charly.canal.BaselineHeaderMissingReproTest)
+java.lang.AssertionError: Missing final header must leave only the header request; no orphan photo expected:<1> but was:<2>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at mx.charly.canal.BaselineHeaderMissingReproTest.aMissingFinalHeaderMustNotBeFollowedByAnOriginalPhoto(BaselineHeaderMissingReproTest.kt:40)
+
+FAILURES!!!
+Tests run: 1,  Failures: 1
