@@ -22,7 +22,7 @@ class RelaySettingsActivity : Screen() {
     }
     override fun onResume() {
         super.onResume()
-        observed = TelegramSession.current
+        observed = if (BuildConfig.PICK_RELAY_REAL_ENABLED) TelegramSession.current else null
         observed?.observers?.add(changed)
         render()
     }
@@ -44,8 +44,12 @@ class RelaySettingsActivity : Screen() {
     private fun render() {
         layout("Puente a Pick$ · v0.4", "Preparación privada · salida real OFF")
         card("Salida real bloqueada en esta versión",
-            "Puedes preparar las identidades de tus fuentes y destino. Esta compilación no permite encender el reenvío. " +
-                "Las pruebas usan Fake TDLib y no demuestran un envío real a Pick$.")
+            "El puente permanece apagado. La configuración existente se conserva sin cambios. " +
+                "Los avisos locales se administran por separado desde tus conversaciones.")
+        if (!BuildConfig.PICK_RELAY_REAL_ENABLED) {
+            button("Volver a CanalDeck") { finish() }
+            return
+        }
         val session = connected()
         if (session == null) {
             label("Abre esta pantalla desde tu cuenta conectada en CanalDeck. Una sesión distinta no hereda la selección.", 14f, soft)
@@ -118,6 +122,7 @@ class RelaySettingsActivity : Screen() {
     }
 
     private fun chooseDestination() {
+        if (!BuildConfig.PICK_RELAY_REAL_ENABLED) return
         val session = connected() ?: return
         // Pick$ is a channel: exclude groups and private chats from the destination picker.
         val choices = loaded(session).filter { (session.chats[it.chatId]?.type as? ChatTypeSupergroup)?.isChannel == true }
@@ -134,6 +139,7 @@ class RelaySettingsActivity : Screen() {
     }
 
     private fun chooseSource() {
+        if (!BuildConfig.PICK_RELAY_REAL_ENABLED) return
         val session = connected() ?: return
         val policies = RelaySettingsSelection.allowedPolicies
         dialog().setTitle("¿Qué fuente autorizada vas a identificar?")
@@ -154,6 +160,7 @@ class RelaySettingsActivity : Screen() {
     }
 
     private fun renderCoverage(preferences: RelayPreferences) {
+        if (!BuildConfig.PICK_RELAY_REAL_ENABLED) return
         label("Cobertura local y privada", 18f)
         label("Estos son eventos vistos por CanalDeck estando conectado, no el total publicado en Telegram. No se guardan textos, captions, fotos ni enlaces en los contadores.", 12f, soft)
         try {

@@ -8,6 +8,7 @@ import dev.g000sha256.tdl.dto.Message
  * It has no transport and never calls deliverSynthetic or any Telegram output operation.
  */
 class RelayCoordinator(context: Context, private val session: TelegramSession) : AutoCloseable {
+    init { check(BuildConfig.PICK_RELAY_REAL_ENABLED) { "REAL_RELAY_COMPILED_OFF" } }
     private val application = context.applicationContext
     private val database = RelayDatabase(application)
     private val engine = PickRelayEngine(database)

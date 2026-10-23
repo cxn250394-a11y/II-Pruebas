@@ -13,15 +13,52 @@ for flavor in normal offline; do
   adb install -r "apps/canaldeck/app/build/outputs/apk/androidTest/$flavor/debug/app-$flavor-debug-androidTest.apk"
 done
 adb logcat -c
-# Only home/identity/sandbox tests run in normal: never start a TDLib session.
-adb shell am instrument -w -e class mx.charly.canal.VariantIsolationDeviceTest mx.charly.canal.test/androidx.test.runner.AndroidJUnitRunner | tee canal-device/normal-instrumentation.txt
-grep -q 'OK (3 tests)' canal-device/normal-instrumentation.txt
+# Only identity/sandbox and OFF metadata tests run in normal: never start TDLib.
+adb shell am instrument -w -e class mx.charly.canal.VariantIsolationDeviceTest,mx.charly.canal.CompiledRelayOffDeviceTest mx.charly.canal.test/androidx.test.runner.AndroidJUnitRunner | tee canal-device/normal-instrumentation.txt
+grep -q 'OK (6 tests)' canal-device/normal-instrumentation.txt
 ! grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|Process crashed' canal-device/normal-instrumentation.txt
 adb exec-out run-as mx.charly.canal cat files/variant-isolation-evidence.json > canal-device/normal-variant-isolation.json
+adb exec-out run-as mx.charly.canal cat files/compiled-relay-off-evidence.json > canal-device/normal-compiled-relay-off.json
 adb shell am instrument -w mx.charly.canal.offline.test/androidx.test.runner.AndroidJUnitRunner | tee canal-device/offline-instrumentation.txt
-grep -q 'OK (31 tests)' canal-device/offline-instrumentation.txt
+grep -q 'OK (34 tests)' canal-device/offline-instrumentation.txt
 ! grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|Process crashed' canal-device/offline-instrumentation.txt
 adb exec-out run-as mx.charly.canal.offline cat files/variant-isolation-evidence.json > canal-device/offline-variant-isolation.json
+adb exec-out run-as mx.charly.canal.offline cat files/compiled-relay-off-evidence.json > canal-device/offline-compiled-relay-off.json
+# Two new instrumentation processes per flavor. Force-stop only this CI emulator's app.
+for flavor in normal offline; do
+  package=mx.charly.canal
+  if test "$flavor" = offline; then package=mx.charly.canal.offline; fi
+  for phase in seed verify; do
+    if test "$phase" = verify; then adb shell am force-stop "$package"; fi
+    log="canal-device/$flavor-compiled-relay-off-$phase.txt"
+    adb shell am instrument -w \
+      -e class mx.charly.canal.CompiledRelayOffDeviceTest#restartKeepsExistingMetadataUntouched \
+      -e relay_off_restart_phase "$phase" \
+      "$package.test/androidx.test.runner.AndroidJUnitRunner" | tee "$log"
+    grep -q 'OK (1 test)' "$log"
+    ! grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|Process crashed' "$log"
+    adb exec-out run-as "$package" cat files/compiled-relay-off-evidence.json > "canal-device/$flavor-compiled-relay-off-$phase.json"
+  done
+done
+python3 - <<'PY_COMPILED_OFF_EVIDENCE'
+import json
+for flavor in ('normal', 'offline'):
+    for phase in ('recreated_lanes', 'seed', 'verify'):
+        suffix='' if phase=='recreated_lanes' else '-'+phase
+        with open(f'canal-device/{flavor}-compiled-relay-off{suffix}.json') as f:
+            e=json.load(f)
+        assert e['application_id']=='mx.charly.canal'+('.offline' if flavor=='offline' else '')
+        assert e['phase']==phase and e['offline_rehearsal_only'] is (flavor=='offline')
+        assert e['compiled_real_output_enabled'] is False and e['factory_calls']==0
+        assert e['recreated_lifecycles']==3 and e['preserved_file_count']>=3
+        for field in ('unchanged_preferences_and_sqlite','pending_observation_preserved','unknown_observation_preserved',
+                      'pending_ack_preserved','enabled_photo_consent_and_recovery_pause_preserved','settings_mutators_absent'):
+            assert e[field] is True
+        assert e['account_connected'] is False and e['sent_real_messages']==0
+        assert e['process_restart_verified'] is (phase=='verify')
+        if phase=='verify': assert e['seed_pid']!=e['current_pid']
+        print(f'COMPILED_OFF_{flavor.upper()}_{phase.upper()}='+json.dumps(e,sort_keys=True))
+PY_COMPILED_OFF_EVIDENCE
 python3 - <<'PY_VARIANT_EVIDENCE'
 import json
 for flavor in ('normal', 'offline'):

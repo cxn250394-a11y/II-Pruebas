@@ -43,8 +43,7 @@ class TelegramSession private constructor(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + errorHandler)
     private val client = TdlClient.create()
     private val relayAdapter by lazy { TdlRelayAdapter(client, { accountId }, { ready && !closing }) }
-    private var singleRelayFailed = false
-    private val singleRelay by lazy {
+    private val singleRelay = CompiledRelayLane {
         ExistingClientRelayBridge(context, client, relayAdapter, { accountId },
             { current === this && ready && !closing && network == "En línea" }, { chats },
             { operation -> scope.launch { operation() }; Unit })
@@ -74,11 +73,7 @@ class TelegramSession private constructor(private val context: Context) {
     private var pendingJob: Job? = null
 
     private fun withSingleRelay(operation: (ExistingClientRelayBridge) -> Unit) {
-        if (singleRelayFailed) return
-        try { operation(singleRelay) } catch (_: Exception) {
-            singleRelayFailed = true
-            try { singleRelay.close() } catch (_: Exception) { /* preserve metadata and stop this lane */ }
-        }
+        singleRelay.with(operation)
     }
     private fun notifyUi() { withSingleRelay { it.onSessionChanged() }; observers.forEach { it() } }
     private fun notifyMessages(chat: Long) { messageObservers.forEach { it(chat) } }
@@ -133,7 +128,8 @@ class TelegramSession private constructor(private val context: Context) {
             }
         }
         // Expiration is local metadata work; this is not another update reader or output worker.
-        scope.launch { while (isActive) { delay(1_000); withSingleRelay { it.expire() } } }
+        if (BuildConfig.PICK_RELAY_REAL_ENABLED)
+            scope.launch { while (isActive) { delay(1_000); withSingleRelay { it.expire() } } }
         scope.launch { client.setLogVerbosityLevel(0); client.getAuthorizationState() }
     }
     private suspend fun authorization(s: AuthorizationState) {
@@ -162,7 +158,7 @@ class TelegramSession private constructor(private val context: Context) {
                     is TdlResult.Failure -> failure(me)
                 }
             }
-            is AuthorizationStateClosed -> { withSingleRelay { it.close() }; closing = true; accountId = 0; chats.clear(); recent.clear(); removed.clear(); if (current === this) current = null; notifyUi(); scope.cancel() }
+            is AuthorizationStateClosed -> { singleRelay.close(); closing = true; accountId = 0; chats.clear(); recent.clear(); removed.clear(); if (current === this) current = null; notifyUi(); scope.cancel() }
             else -> Unit
         }
     }
@@ -330,10 +326,10 @@ class TelegramSession private constructor(private val context: Context) {
             }
         }
     }
-    fun logout() { if (!closing) { withSingleRelay { it.close() }; scope.launch { val r = client.logOut(); if (r is TdlResult.Failure) failure(r) } } }
+    fun logout() { if (!closing) { singleRelay.close(); scope.launch { val r = client.logOut(); if (r is TdlResult.Failure) failure(r) } } }
     fun stop() {
         if (closing) return
-        withSingleRelay { it.close() }
+        singleRelay.close()
         closing = true; ready = false; onMessage = null; onRead = null; visibleChat = 0; status = "Desconectando"; notifyUi()
         scope.launch { client.close() }
     }

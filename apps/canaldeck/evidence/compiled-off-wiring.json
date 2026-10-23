@@ -1,0 +1,25 @@
+{
+  "parent_head": "df295fca5933c4249011c94c5d9ecdfae31084b6",
+  "kind": "static source wiring regression; not native TDLib execution",
+  "runs": [
+    {
+      "source": "frozen-parent",
+      "returncode": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/scratch/ff48c96d76ce/canaldeck-fuse/repo/apps/canaldeck/scripts/check-compiled-relay-off.py\", line 15, in <module>\n    assert \"private val singleRelay = CompiledRelayLane {\" in session, \"Session must gate BEFORE bridge factory\"\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Session must gate BEFORE bridge factory\n"
+    },
+    {
+      "source": "candidate",
+      "returncode": 0,
+      "stdout": "PASS P2-11A wiring: OFF before both factories, timer and settings metadata; independent client/notices retained\n",
+      "stderr": ""
+    }
+  ],
+  "parent_source_git_blobs": {
+    "TelegramSession.kt": "fc59f41d8e7a6523a90dd12d7bfa006733e5bea3",
+    "ConnectionService.kt": "a0b37ba8c0b196d9dcc34fa90334388da445168e",
+    "RelaySettingsActivity.kt": "5175672d5b8e838f77264475c6ae4f6446116c7e",
+    "ExistingClientRelayBridge.kt": "7d9730a98f1b1a8fdc5695c3afa8202864af4c07",
+    "RelayCoordinator.kt": "a0e265bce7c76dc9299552db64fc21af299931d5"
+  }
+}
