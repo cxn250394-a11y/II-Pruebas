@@ -316,6 +316,12 @@ class CanalActivity : Screen() {
             button("Cargar también conversaciones archivadas"){s.refresh(1000,true);toast("Se solicitó el archivo. Revisa Chats.")}
             button("Borrar los avisos actuales de CanalDeck"){ConnectionService.current?.clearAll()}
         }
+        if(s?.ready==true&&!demo){
+            label("Favoritos y carpetas · conservar entre APK",18f)
+            button("Guardar respaldo cifrado"){prepareBackup(true)}
+            button("Restaurar respaldo de esta cuenta"){prepareBackup(false)}
+            label("Puedes respaldar favoritos, prioridades, carpetas, su orden y reglas de aviso. La clave debe tener 12+ caracteres y NO se guarda. No incluye chats, archivos, sesiones ni credenciales.",12f,soft)
+        }
         button("Permisos y notificaciones de Android"){try{startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName))}catch(_:Exception){toast("Revisa CanalDeck en Ajustes de Android")}}
         label("Mantén pulsado un chat → Prioridad para verlo arriba; puedes filtrar solo prioritarios. Prioridad NO activa avisos apagados. Los avisos normales y prioritarios usan grupos Android separados; el sistema puede seguir agrupándolos.",13f,soft)
         label("Para activar un canal: mantén pulsado el chat → Configurar avisos. Todos empiezan apagados. La vista previa está oculta de fábrica.",13f,soft)
@@ -325,6 +331,69 @@ class CanalActivity : Screen() {
         button("Ayuda de activación"){guide()}
         button("Licencias y alcance"){dialog().setTitle("CanalDeck Personal 0.3.1 beta").setMessage("Cliente independiente, no afiliado a Nicegram ni Telegram. TDLib: Boost 1.0. TDL Coroutines y Kotlin Coroutines: Apache 2.0. Licencias incluidas en assets. Una cuenta. Sin llamadas, chats secretos, exportación de contenido protegido ni pagos. La beta usa firma de prueba y no ha validado tu cuenta real.").setPositiveButton("Cerrar",null).show()}
         nav()
+    }
+    private fun prepareBackup(exporting: Boolean) {
+        if(TelegramSession.current?.ready!=true || demo)return
+        val password=EditText(this).apply {
+            hint="Clave de respaldo (12+ caracteres)"
+            inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            isSaveEnabled=false
+            importantForAutofill=View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+        }
+        allowDialogScreenshots=false
+        dialog().setTitle(if(exporting)"Guardar organización cifrada"else"Restaurar organización")
+            .setView(password).setNegativeButton("Cancelar",null)
+            .setPositiveButton("Continuar"){_,_->
+                val chars=password.text.toString().toCharArray();password.text.clear()
+                if(chars.size<12){chars.fill('\\u0000');toast("La clave necesita 12 caracteres o más")}
+                else {
+                    backupPassword?.fill('\\u0000');backupPassword=chars
+                    try {
+                        val intent=Intent(if(exporting)Intent.ACTION_CREATE_DOCUMENT else Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE);type="application/octet-stream"
+                            if(exporting)putExtra(Intent.EXTRA_TITLE,"canaldeck-organizacion.cdo")
+                        }
+                        @Suppress("DEPRECATION")
+                        startActivityForResult(intent,if(exporting)exportCode else importCode)
+                    }catch(_:Exception){backupPassword?.fill('\\u0000');backupPassword=null;toast("No se pudo abrir el selector de archivos")}
+                }
+                secure()
+            }.show()
+    }
+    @Deprecated("Android Activity file picker compatibility")
+    override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
+        super.onActivityResult(requestCode,resultCode,data)
+        if(requestCode!=exportCode&&requestCode!=importCode)return
+        val password=backupPassword;backupPassword=null
+        try {
+            if(resultCode!=RESULT_OK || data?.data==null || password==null)return
+            require(TelegramSession.current?.ready==true)
+            val uri=requireNotNull(data.data)
+            if(requestCode==exportCode) {
+                val bytes=OrganizationBackup.encrypt(org.exportOrganization().toByteArray(Charsets.UTF_8),password)
+                contentResolver.openOutputStream(uri,"w")?.use{it.write(bytes)} ?: error("Archivo no disponible")
+                toast("Respaldo cifrado guardado. Conserva tu contraseña.")
+            }else {
+                val bytes=java.io.ByteArrayOutputStream()
+                contentResolver.openInputStream(uri)?.use{input->
+                    val buffer=ByteArray(4096)
+                    while(true) {
+                        val n=input.read(buffer)
+                        if(n<0)break
+                        bytes.write(buffer,0,n)
+                        require(bytes.size()<=400_000)
+                    }
+                } ?: error("Archivo no disponible")
+                val plaintext=OrganizationBackup.decrypt(bytes.toByteArray(),password)
+                val valid=org.importOrganization(plaintext.toString(Charsets.UTF_8))
+                plaintext.fill(0)
+                if(!valid)error("El respaldo no pertenece a esta cuenta")
+                ConnectionService.current?.clearAll()
+                toast("Organización restaurada")
+                if(screen=="folders")folders()else if(screen=="list")refreshChats()else settings()
+            }
+        }catch(_:Exception){toast("No se pudo procesar el respaldo: revisa la clave, el archivo y que sea la misma cuenta")}
+        finally {password?.fill('\\u0000');secure()}
     }
     private fun openChat(id:Long){
         val s=TelegramSession.current ?: return
