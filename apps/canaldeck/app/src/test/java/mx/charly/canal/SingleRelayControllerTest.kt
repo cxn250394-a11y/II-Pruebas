@@ -18,6 +18,12 @@ class SingleRelayControllerTest {
             beforeRefresh()
             if (deferRefresh) refreshCallbacks += callback else callback(state)
         }
+        override fun checkHeaderExists(command: SingleRelayCommand, callback: (Boolean) -> Unit) {
+            assertEquals(AsyncRelayStage.MEDIA, command.request.stage)
+            assertTrue(requireNotNull(command.confirmedHeaderMessageId) > 0L)
+            assertFalse(command.expectedHeaderText.isNullOrBlank())
+            callback(true) // Explicit synthetic fixture: the final attribution header remains present.
+        }
         override fun dispatch(command: SingleRelayCommand, callback: (SingleRelayDispatchResult) -> Unit) {
             commands += command
             responses += command to callback
@@ -94,6 +100,10 @@ class SingleRelayControllerTest {
         f.header()
         val beforeMedia = f.port.refreshCallbacks.last()
         beforeMedia(f.port.state); beforeMedia(f.port.state)
+        assertEquals(1, f.port.commands.size)
+        val afterHeaderRead = f.port.refreshCallbacks.last()
+        assertNotSame(beforeMedia, afterHeaderRead)
+        afterHeaderRead(f.port.state); afterHeaderRead(f.port.state)
         assertEquals(2, f.port.commands.size)
         f.port.queued(response, 1000) // Historical queued callback repeats after media starts.
         assertEquals(AsyncRelayPhase.MEDIA_WAITING, f.snapshot().phase)

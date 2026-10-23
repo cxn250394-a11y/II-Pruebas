@@ -15,6 +15,8 @@ class SingleRelayController(
 ) {
     private data class Starting(val observed: SingleRelayObserved, val token: String, val started: Long)
     private data class Context(val observed: SingleRelayObserved, val evaluation: SingleRelayPlanning.Evaluation,
+        val headerChecks: MutableSet<String> = mutableSetOf(),
+        val answeredHeaderChecks: MutableSet<String> = mutableSetOf(),
         val issuedRequests: MutableSet<String> = mutableSetOf())
     private val starting = linkedMapOf<RelayKey, Starting>()
     private val contexts = linkedMapOf<RelayKey, Context>()
@@ -24,6 +26,31 @@ class SingleRelayController(
 
     @Synchronized fun snapshot(key: RelayKey): AsyncRelaySnapshot? = ledger.read(key)
     @Synchronized fun decision(key: RelayKey): SingleRelayDecision? = decisions[key]?.copy(snapshot = ledger.read(key))
+
+    /** Local read-only lease used immediately before a dormant native provider invocation. */
+    @Synchronized fun isRequestActive(command: SingleRelayCommand): Boolean {
+        if (closed) return false
+        val context = contexts[command.key] ?: return false
+        val old = ledger.read(command.key) ?: return false
+        if (old.terminal || old.intent.scope != command.scope || command.sourceChatId != command.key.sourceChatId ||
+            old.requests.last().requestId != command.request.requestId || old.requests.last().stage != command.request.stage ||
+            old.requests.last().responseBound || command.request.responseBound ||
+            old.requests.last().expectedSourceMessageIds != command.request.expectedSourceMessageIds ||
+            old.requests.last().deadlineMillis != command.request.deadlineMillis)
+            return false
+        val now = clockMillis()
+        if (now < old.intent.createdMillis || now >= old.requests.last().deadlineMillis) return false
+        return if (command.request.stage == AsyncRelayStage.HEADER)
+            command.header == context.evaluation.plan.header
+        else AsyncRelayValidation.confirmed(old.requests.first()) &&
+            old.requests.first().finalMessageIds.values.singleOrNull() == command.confirmedHeaderMessageId &&
+            command.expectedHeaderText == context.evaluation.plan.header
+    }
+
+    /** Recheck a committed owner revision after native awaits, including OFF -> ON ABA. */
+    @Synchronized fun isRequestActive(command: SingleRelayCommand, currentConfigurationRevision: Long): Boolean =
+        currentConfigurationRevision >= 0L && currentConfigurationRevision < Long.MAX_VALUE &&
+            ledger.read(command.key)?.intent?.configurationRevision == currentConfigurationRevision && isRequestActive(command)
 
     @Synchronized fun start(observed: SingleRelayObserved): SingleRelayDecision {
         val key = observed.key
@@ -111,15 +138,78 @@ class SingleRelayController(
                     if (port.mode == SingleRelayPortMode.EXISTING_CLIENT && !BuildConfig.PICK_RELAY_REAL_ENABLED) {
                         stop(key, "REAL_RELAY_COMPILED_OFF"); return@synchronized
                     }
-                    if (!currentRequest(key, request.requestId) || !context.issuedRequests.add(request.requestId)) return@synchronized
+                    if (!currentRequest(key, request.requestId)) return@synchronized
+                    val headerId = if (request.stage == AsyncRelayStage.MEDIA)
+                        old.requests.first().takeIf { AsyncRelayValidation.confirmed(it) }
+                            ?.finalMessageIds?.values?.singleOrNull() else null
+                    if (request.stage == AsyncRelayStage.MEDIA && (headerId == null || headerId <= 0L)) {
+                        stop(key, "FINAL_HEADER_ID_UNAVAILABLE"); return@synchronized
+                    }
                     val command = SingleRelayCommand(key, request, old.intent.scope, key.sourceChatId,
-                        if (request.stage == AsyncRelayStage.HEADER) context.evaluation.plan.header else null)
-                    try {
-                        port.dispatch(command) { result -> dispatchResult(key, request.requestId, result) }
-                    } catch (_: Exception) { stop(key, "DISPATCH_EXCEPTION") }
+                        if (request.stage == AsyncRelayStage.HEADER) context.evaluation.plan.header else null,
+                        headerId, if (request.stage == AsyncRelayStage.MEDIA) context.evaluation.plan.header else null)
+                    if (request.stage == AsyncRelayStage.HEADER) dispatchOnce(context, command)
+                    else if (context.headerChecks.add(request.requestId)) {
+                        try {
+                            port.checkHeaderExists(command) { exists ->
+                                synchronized(this) headerRead@{
+                                    if (closed || contexts[key] !== context || !currentRequest(key, request.requestId)) return@headerRead
+                                    if (!context.answeredHeaderChecks.add(request.requestId)) return@headerRead
+                                    if (!exists) { stop(key, "FINAL_HEADER_MISSING_OR_CHANGED"); return@headerRead }
+                                    // A matching delete/session/source mutation during the read removed
+                                    // this context. A positive stale callback cannot revive its intent.
+                                    refreshAfterHeaderCheck(context, command)
+                                }
+                            }
+                        } catch (_: Exception) { stop(key, "FINAL_HEADER_READ_FAILED") }
+                    }
                 }
             }
         } catch (_: Exception) { stop(key, "FRESH_SNAPSHOT_EXCEPTION") }
+    }
+
+    private fun refreshAfterHeaderCheck(context: Context, command: SingleRelayCommand) {
+        val key = context.observed.key
+        try {
+            port.refresh(context.observed) { fresh ->
+                synchronized(this) {
+                    if (closed || contexts[key] !== context || !currentRequest(key, command.request.requestId)) return@synchronized
+                    val old = ledger.read(key) ?: return@synchronized
+                    val now = clockMillis()
+                    val current = fresh?.let { SingleRelayPlanning.evaluate(context.observed, it, now / 1000L, port.mode) }
+                    if (current == null || now < old.intent.createdMillis || current != context.evaluation ||
+                        current.fresh.state.configurationRevision != old.intent.configurationRevision ||
+                        current.fresh.state.scope != old.intent.scope) {
+                        stop(key, "CURRENT_CONSENT_PERMISSION_SESSION_OR_CONTENT_CHANGED"); return@synchronized
+                    }
+                    dispatchOnce(context, command)
+                }
+            }
+        } catch (_: Exception) { stop(key, "FRESH_SNAPSHOT_EXCEPTION") }
+    }
+
+    private fun dispatchOnce(context: Context, command: SingleRelayCommand) {
+        val key = context.observed.key
+        if (closed || contexts[key] !== context || !currentRequest(key, command.request.requestId) ||
+            !context.issuedRequests.add(command.request.requestId)) return
+        if (port.mode == SingleRelayPortMode.EXISTING_CLIENT && !BuildConfig.PICK_RELAY_REAL_ENABLED) {
+            stop(key, "REAL_RELAY_COMPILED_OFF"); return
+        }
+        try { port.dispatch(command) { result -> dispatchResult(key, command.request.requestId, result) } }
+        catch (_: Exception) { stop(key, "DISPATCH_EXCEPTION") }
+    }
+
+    /** Permanent destination deletions only; the bridge supplies the exact current scope. */
+    @Synchronized fun onDestinationDeleted(scope: AsyncRelayScope, messageIds: Collection<Long>) {
+        if (closed || messageIds.isEmpty()) return
+        val deleted = messageIds.filter { it > 0L }.toSet()
+        contexts.keys.toList().forEach { key ->
+            val old = ledger.read(key) ?: return@forEach
+            if (old.terminal || old.intent.scope != scope) return@forEach
+            val header = old.requests.first()
+            if (header.stage == AsyncRelayStage.HEADER && header.finalMessageIds.values.any { it in deleted })
+                stop(key, "FINAL_HEADER_DELETED")
+        }
     }
 
     private fun currentRequest(key: RelayKey, requestId: String): Boolean {

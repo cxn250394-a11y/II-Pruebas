@@ -1,0 +1,21 @@
+JUnit version 4.13.2
+..E........E..
+Time: 0.048
+There were 2 failures:
+1) sameDestinationLossIsLocalUnknownAndDoesNotContaminateAFutureRequest(mx.charly.canal.ExistingClientRelayAckRouterTest)
+java.lang.AssertionError
+	at org.junit.Assert.fail(Assert.java:87)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at org.junit.Assert.assertFalse(Assert.java:75)
+	at mx.charly.canal.ExistingClientRelayAckRouterTest.sameDestinationLossIsLocalUnknownAndDoesNotContaminateAFutureRequest(ExistingClientRelayAckRouterTest.kt:176)
+2) foreignFloodAtOnePendingDestinationDoesNotPoisonAnotherDestination(mx.charly.canal.ExistingClientRelayAckRouterTest)
+java.lang.AssertionError
+	at org.junit.Assert.fail(Assert.java:87)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at org.junit.Assert.assertFalse(Assert.java:75)
+	at mx.charly.canal.ExistingClientRelayAckRouterTest.foreignFloodAtOnePendingDestinationDoesNotPoisonAnotherDestination(ExistingClientRelayAckRouterTest.kt:161)
+
+FAILURES!!!
+Tests run: 12,  Failures: 2

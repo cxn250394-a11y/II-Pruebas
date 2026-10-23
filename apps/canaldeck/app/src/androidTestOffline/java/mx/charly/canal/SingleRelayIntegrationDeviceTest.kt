@@ -54,6 +54,12 @@ class SingleRelayIntegrationDeviceTest {
         override fun refresh(observed: SingleRelayObserved, callback: (SingleRelayFreshState?) -> Unit) {
             refreshes++; callback(fresh)
         }
+        override fun checkHeaderExists(command: SingleRelayCommand, callback: (Boolean) -> Unit) {
+            assertEquals(AsyncRelayStage.MEDIA, command.request.stage)
+            assertTrue(requireNotNull(command.confirmedHeaderMessageId) > 0L)
+            assertFalse(command.expectedHeaderText.isNullOrBlank())
+            callback(true) // Only this explicit synthetic fixture attests its Fake header.
+        }
         override fun dispatch(command: SingleRelayCommand, callback: (SingleRelayDispatchResult) -> Unit) {
             requests += command
             callback(SingleRelayDispatchResult.Queued(AsyncRelayResponse(command.scope, command.request.requestId,
@@ -88,6 +94,8 @@ class SingleRelayIntegrationDeviceTest {
         assertEquals(2, fake.requests.size)
         assertEquals(f.observed.sourceChatId, fake.requests.last().sourceChatId)
         assertEquals(listOf(f.observed.messageId), fake.requests.last().request.expectedSourceMessageIds)
+        assertEquals(501L, requireNotNull(fake.requests.last().confirmedHeaderMessageId))
+        assertEquals(fake.requests.first().header, fake.requests.last().expectedHeaderText)
         val mediaTemporary = media.requests.last().temporaryMessageIds.single()
         controller.onUpdate(f.final(mediaTemporary, 601))
         val complete = requireNotNull(controller.snapshot(f.key))

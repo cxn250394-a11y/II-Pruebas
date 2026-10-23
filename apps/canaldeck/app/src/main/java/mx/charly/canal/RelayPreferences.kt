@@ -3,6 +3,7 @@ package mx.charly.canal
 import android.content.Context
 import android.content.SharedPreferences
 import java.util.concurrent.ConcurrentHashMap
+import org.json.JSONObject
 
 /** Private, account-bound routing choices. No message body, caption, image or credential. */
 class RelayPreferences(context: Context, val accountId: Long) {
@@ -40,6 +41,32 @@ class RelayPreferences(context: Context, val accountId: Long) {
     fun revision(): Long = synchronized(lock) {
         val revision = p.getLong("revision", 0L)
         if (healthy && revision >= 0L) revision else Long.MAX_VALUE
+    }
+
+    /** Durable recovery fence, separate from user routing consent and its revision. */
+    internal fun recoveryPause(): SingleRelayRecoveryToken? = synchronized(lock) {
+        check(healthy) { "Recovery preferences unavailable" }
+        p.getString("single-recovery-pause", null)?.let { raw ->
+            val j = JSONObject(raw)
+            require(j.getInt("schema") == 1 && j.getLong("account") == accountId)
+            SingleRelayRecoveryToken(AsyncRelayScope(accountId, j.getString("session"), j.getLong("destination")),
+                j.getLong("revision"), j.getString("nonce"), j.getString("clientLifetime"))
+        }
+    }
+
+    internal fun compareAndSetRecoveryPause(expected: SingleRelayRecoveryToken?, next: SingleRelayRecoveryToken?): Boolean = synchronized(lock) {
+        if (!healthy || next != null && next.previousScope.accountId != accountId || recoveryPause() != expected)
+            return@synchronized false
+        val edit = p.edit()
+        if (next == null) edit.remove("single-recovery-pause") else edit.putString("single-recovery-pause",
+            JSONObject().put("schema", 1).put("account", accountId).put("session", next.previousScope.sessionId)
+                .put("destination", next.previousScope.destinationChatId).put("revision", next.configurationRevision)
+                .put("nonce", next.nonce).put("clientLifetime", next.clientLifetime).toString())
+        // Clearing this fence is an explicit recovery action, never enabled=true. It must
+        // not silently alter the owner's routing revision or erase photo consent/baselines.
+        val saved = edit.commit()
+        if (!saved) healthy = false
+        saved
     }
 
     fun destinationChatId(): Long = synchronized(lock) { if (healthy) p.getLong("destination", 0L) else 0L }

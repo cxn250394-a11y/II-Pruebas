@@ -10,9 +10,18 @@ data class ExistingClientRelayContext(
 )
 
 /** Injectable operations on a supplied client; tests provide a recording Fake, never TDLib. */
+internal sealed class ExistingClientRelayQueueResult {
+    data class Queued(val response: AsyncRelayResponse) : ExistingClientRelayQueueResult()
+    data object NotInvoked : ExistingClientRelayQueueResult()
+    data object Uncertain : ExistingClientRelayQueueResult()
+}
+
 internal interface ExistingClientRelayCalls {
     suspend fun snapshot(observed: SingleRelayObserved, config: RelayConfig): Pair<RelayBatch, RelayPermissions>?
+    suspend fun headerExists(command: SingleRelayCommand): Boolean = false
     suspend fun queue(command: SingleRelayCommand): AsyncRelayResponse?
+    suspend fun queueResult(command: SingleRelayCommand): ExistingClientRelayQueueResult =
+        queue(command)?.let { ExistingClientRelayQueueResult.Queued(it) } ?: ExistingClientRelayQueueResult.Uncertain
 }
 
 /**
@@ -26,7 +35,8 @@ internal class ExistingClientRelayPort(
     private val launch: (suspend () -> Unit) -> Unit,
     private val beforeQueue: (SingleRelayCommand) -> Boolean = { true },
     private val afterQueued: (AsyncRelayResponse) -> Boolean = { true },
-    private val queueUncertain: (SingleRelayCommand) -> Unit = {}
+    private val queueUncertain: (SingleRelayCommand) -> Unit = {},
+    private val queueNotInvoked: (SingleRelayCommand) -> Unit = {}
 ) : SingleRelayPort {
     override val mode = SingleRelayPortMode.EXISTING_CLIENT
 
@@ -75,7 +85,9 @@ internal class ExistingClientRelayPort(
             !command.key.groupId.matches(Regex("m:[1-9][0-9]{0,18}")) || command.key.groupId.substring(2).toLongOrNull() == null ||
             command.request.expectedCount != 1 || command.request.responseBound ||
             command.request.stage == AsyncRelayStage.HEADER && command.header.isNullOrBlank() ||
+            command.request.stage == AsyncRelayStage.HEADER && (command.confirmedHeaderMessageId != null || command.expectedHeaderText != null) ||
             command.request.stage == AsyncRelayStage.MEDIA && (command.header != null ||
+                (command.confirmedHeaderMessageId ?: 0L) <= 0L || command.expectedHeaderText.isNullOrBlank() ||
                 command.request.expectedSourceMessageIds != listOf(command.key.groupId.substring(2).toLongOrNull()))) {
             callback(SingleRelayDispatchResult.Rejected); return
         }
@@ -85,14 +97,41 @@ internal class ExistingClientRelayPort(
                     SingleRelayDispatchResult.Rejected
                 } else if (!beforeQueue(command)) SingleRelayDispatchResult.Rejected
                 else {
-                    val response = calls.queue(command)
-                    if (response == null || !afterQueued(response) || authorized(command.sourceChatId, command.scope) != initial) {
-                        queueUncertain(command)
-                        SingleRelayDispatchResult.Rejected
-                    } else SingleRelayDispatchResult.Queued(response)
+                    when (val queued = calls.queueResult(command)) {
+                        ExistingClientRelayQueueResult.NotInvoked -> {
+                            queueNotInvoked(command)
+                            SingleRelayDispatchResult.Rejected
+                        }
+                        ExistingClientRelayQueueResult.Uncertain -> {
+                            queueUncertain(command)
+                            SingleRelayDispatchResult.Rejected
+                        }
+                        is ExistingClientRelayQueueResult.Queued -> {
+                            val response = queued.response
+                            if (!afterQueued(response) || authorized(command.sourceChatId, command.scope) != initial) {
+                                queueUncertain(command)
+                                SingleRelayDispatchResult.Rejected
+                            } else SingleRelayDispatchResult.Queued(response)
+                        }
+                    }
                 }
             } catch (_: Exception) { queueUncertain(command); SingleRelayDispatchResult.Rejected }
             callback(result)
+        }
+    }
+
+    override fun checkHeaderExists(command: SingleRelayCommand, callback: (Boolean) -> Unit) {
+        val initial = authorized(command.sourceChatId, command.scope)
+        if (initial == null || command.request.stage != AsyncRelayStage.MEDIA ||
+            (command.confirmedHeaderMessageId ?: 0L) <= 0L || command.expectedHeaderText.isNullOrBlank()) {
+            callback(false); return
+        }
+        launch {
+            val exists = try {
+                authorized(command.sourceChatId, command.scope) == initial &&
+                    calls.headerExists(command) && authorized(command.sourceChatId, command.scope) == initial
+            } catch (_: Exception) { false }
+            callback(exists)
         }
     }
 }
