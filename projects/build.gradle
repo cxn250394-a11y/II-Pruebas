@@ -54,6 +54,7 @@ project(':audio') {
         implementation 'androidx.media3:media3-session:1.5.1'
     }
 }
+project(':stats') { android { defaultConfig { versionCode 2; versionName '0.2.0-beta' } } }
 project(':kart') {
     configurations { natives }
     dependencies {
