@@ -2,7 +2,7 @@
   "schema_version": 2,
   "runtime": "Gradle Android JVM/Robolectric",
   "totals": {
-    "tests": 753,
+    "tests": 767,
     "failures": 0,
     "errors": 0,
     "skipped": 0
@@ -12,7 +12,7 @@
     "normal": {
       "task": "testNormalDebugUnitTest",
       "totals": {
-        "tests": 375,
+        "tests": 382,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -42,6 +42,13 @@
         {
           "name": "mx.charly.canal.CanalSmokeTest",
           "tests": "6",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0"
+        },
+        {
+          "name": "mx.charly.canal.CompiledRelayOffTest",
+          "tests": "7",
           "failures": "0",
           "errors": "0",
           "skipped": "0"
@@ -247,7 +254,7 @@
     "offline": {
       "task": "testOfflineDebugUnitTest",
       "totals": {
-        "tests": 378,
+        "tests": 385,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -284,6 +291,13 @@
         {
           "name": "mx.charly.canal.CanalSmokeTest",
           "tests": "6",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0"
+        },
+        {
+          "name": "mx.charly.canal.CompiledRelayOffTest",
+          "tests": "7",
           "failures": "0",
           "errors": "0",
           "skipped": "0"

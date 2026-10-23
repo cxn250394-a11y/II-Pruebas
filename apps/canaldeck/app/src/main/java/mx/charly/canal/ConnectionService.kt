@@ -22,7 +22,7 @@ class ConnectionService : Service() {
     private val seen = NoticeBook()
     private val lines = linkedMapOf<Long, MutableList<String>>()
     private var session: TelegramSession? = null
-    private var relay: RelayCoordinator? = null
+    private val relay = CompiledRelayLane { RelayCoordinator(this, requireNotNull(session)) }
     private var localAccount = 0L
     private var localConnected = false
     private var localEpoch = Any()
@@ -33,7 +33,7 @@ class ConnectionService : Service() {
         }
     }
     private var notificationReceiverRegistered = false
-    private val observer: () -> Unit = { relay?.onSessionChanged(); updateLocalSession(); updateConnection(); if (TelegramSession.current == null) stopSelf() }
+    private val observer: () -> Unit = { relay.with { it.onSessionChanged() }; updateLocalSession(); updateConnection(); if (TelegramSession.current == null) stopSelf() }
     override fun onCreate() {
         super.onCreate(); current = this; lastError = null
         manager.createNotificationChannel(NotificationChannel("connection", "Conexión de CanalDeck", NotificationManager.IMPORTANCE_LOW))
@@ -46,8 +46,7 @@ class ConnectionService : Service() {
         notificationReceiverRegistered = true
         try {
             session = TelegramSession.start(this)
-            relay = session?.let { RelayCoordinator(this, it) }
-            session?.onMessage = { relay?.onLiveMessage(it); notice(it) }; session?.onRead = { clear(it) }
+            session?.onMessage = { message -> relay.with { it.onLiveMessage(message) }; notice(message) }; session?.onRead = { clear(it) }
             session?.observers?.add(observer); updateConnection()
         } catch (_: Throwable) { lastError = "No se pudo cargar el motor de Telegram. No se inició sesión."; stopSelf() }
     }
@@ -183,7 +182,7 @@ class ConnectionService : Service() {
         if (result == LocalPickPublishResult.POSTED) {
             lines[m.chatId] = recent
             while (lines.size > 30) { val id = lines.keys.first(); lines.remove(id); manager.cancel(id.toString(), 2000) }
-            if (pickTitle != null) relay?.onLocalNotified(m)
+            if (pickTitle != null) relay.with { it.onLocalNotified(m) }
             summary()
         }
         return result
@@ -198,6 +197,6 @@ class ConnectionService : Service() {
     }
     fun clear(chat: Long) { lines.remove(chat);manager.cancel(chat.toString(),2000);summary() }
     fun clearAll() { lines.keys.toList().forEach{manager.cancel(it.toString(),2000)};lines.clear();manager.cancel(2) }
-    override fun onDestroy() { localEpoch = Any(); if (notificationReceiverRegistered) unregisterReceiver(notificationChanges); clearAll();relay?.close();relay=null;session?.observers?.remove(observer);session?.stop();session=null;current=null;super.onDestroy() }
+    override fun onDestroy() { localEpoch = Any(); if (notificationReceiverRegistered) unregisterReceiver(notificationChanges); clearAll();relay.close();session?.observers?.remove(observer);session?.stop();session=null;current=null;super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
 }

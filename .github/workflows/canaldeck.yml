@@ -52,6 +52,7 @@ jobs:
         run: |
           python3 scripts/check-source.py
           python3 scripts/check-relay-offline.py
+          python3 scripts/check-compiled-relay-off.py
       - name: Both JVM suites, four APK variants and two instrumentation packages
         run: |
           set -o pipefail

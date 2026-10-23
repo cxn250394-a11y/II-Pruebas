@@ -20,6 +20,7 @@ internal class ExistingClientRelayBridge(
     launch: (suspend () -> Unit) -> Unit,
     private val clockMillis: () -> Long = System::currentTimeMillis
 ) : Closeable {
+    init { check(BuildConfig.PICK_RELAY_REAL_ENABLED) { "REAL_RELAY_COMPILED_OFF" } }
     private val application = context.applicationContext
     // Separate metadata stores avoid competing with the legacy preparation-only coordinator.
     private val observations = RelayDatabase(application, "canaldeck-single-observations.db")
