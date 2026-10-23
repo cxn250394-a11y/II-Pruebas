@@ -345,9 +345,9 @@ class CanalActivity : Screen() {
             .setView(password).setNegativeButton("Cancelar",null)
             .setPositiveButton("Continuar"){_,_->
                 val chars=password.text.toString().toCharArray();password.text.clear()
-                if(chars.size<12){chars.fill('\\u0000');toast("La clave necesita 12 caracteres o más")}
+                if(chars.size<12){chars.fill(0.toChar());toast("La clave necesita 12 caracteres o más")}
                 else {
-                    backupPassword?.fill('\\u0000');backupPassword=chars
+                    backupPassword?.fill(0.toChar());backupPassword=chars
                     try {
                         val intent=Intent(if(exporting)Intent.ACTION_CREATE_DOCUMENT else Intent.ACTION_OPEN_DOCUMENT).apply {
                             addCategory(Intent.CATEGORY_OPENABLE);type="application/octet-stream"
@@ -355,7 +355,7 @@ class CanalActivity : Screen() {
                         }
                         @Suppress("DEPRECATION")
                         startActivityForResult(intent,if(exporting)exportCode else importCode)
-                    }catch(_:Exception){backupPassword?.fill('\\u0000');backupPassword=null;toast("No se pudo abrir el selector de archivos")}
+                    }catch(_:Exception){backupPassword?.fill(0.toChar());backupPassword=null;toast("No se pudo abrir el selector de archivos")}
                 }
                 secure()
             }.show()
@@ -393,7 +393,7 @@ class CanalActivity : Screen() {
                 if(screen=="folders")folders()else if(screen=="list")refreshChats()else settings()
             }
         }catch(_:Exception){toast("No se pudo procesar el respaldo: revisa la clave, el archivo y que sea la misma cuenta")}
-        finally {password?.fill('\\u0000');secure()}
+        finally {password?.fill(0.toChar());secure()}
     }
     private fun openChat(id:Long){
         val s=TelegramSession.current ?: return
@@ -486,7 +486,7 @@ class CanalActivity : Screen() {
         }}.show()
     }
     private fun openTelegramLink(link:String) {
-        val parsed=MessageLinks.public(link)
+        val parsed=MessageLinks.parsePublic(link)
         val session=TelegramSession.current
         if(parsed!=null && session?.ready==true){
             toast("Abriendo enlace público dentro de CanalDeck…")
@@ -541,7 +541,7 @@ class CanalActivity : Screen() {
                         val labels=LocalBetText.labels(recognized)
                         val heading=if(labels.isEmpty())"No se identificaron mercados"else labels.joinToString(", ")
                         dialog().setTitle("Texto leído · sin validar")
-                            .setMessage("Posibles campos: $heading\\n\\n$recognized\\n\\nComprueba casa, partido, selección, cuota y vigencia. Esta lectura no confirma la apuesta ni calcula valor esperado. No se reenvió nada.")
+                            .setMessage(listOf("Posibles campos: $heading",recognized,"Comprueba casa, partido, selección, cuota y vigencia. Esta lectura no confirma la apuesta ni calcula valor esperado. No se reenvió nada.").joinToString(System.lineSeparator()+System.lineSeparator()))
                             .setPositiveButton("Cerrar",null).show()
                     }
                 }

@@ -95,7 +95,8 @@ class Organization(context: Context, private val accountId: Long) {
         return JSONObject().put("schema",1).put("accountId",accountId.toString()).put("settings",data).toString()
     }
     /** Validate everything before writing. Never merge data belonging to a different account. */
-    fun importOrganization(raw: String): Boolean = try {
+    fun importOrganization(raw: String): Boolean {
+        return try {
         if(raw.length > 300_000)return false
         val obj=JSONObject(raw)
         if(obj.optInt("schema") != 1 || obj.optString("accountId") != accountId.toString())return false
@@ -127,7 +128,8 @@ class Organization(context: Context, private val accountId: Long) {
                     values[k]=v
                 }
                 k == "quiet-start" || k == "quiet-end" || k.startsWith("notice-") -> {
-                    if(v !is Int || v !in 0..1439 && !k.startsWith("notice-") || (k.startsWith("notice-") && (v !is Int || v !in 0..2)))return false
+                    if(v !is Int)return false
+                    if((k.startsWith("notice-") && v !in 0..2) || (!k.startsWith("notice-") && v !in 0..1439))return false
                     values[k]=v
                 }
                 else -> {
@@ -152,7 +154,8 @@ class Organization(context: Context, private val accountId: Long) {
             is Set<*> -> editor.putStringSet(key,v.filterIsInstance<String>().toSet())
         } }
         editor.commit()
-    } catch (_: Exception) { false }
+        } catch (_: Exception) { false }
+    }
 
     fun hours(start: String, end: String): Boolean {
         val a = DeckRules.clock(start) ?: return false; val b = DeckRules.clock(end) ?: return false

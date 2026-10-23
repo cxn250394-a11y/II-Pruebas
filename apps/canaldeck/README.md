@@ -1,4 +1,4 @@
-# CanalDeck Personal 0.3.1 beta — cliente propio de Telegram (rama aislada)
+# CanalDeck Personal 0.3.2 beta — UX, respaldo, enlaces y OCR local (rama aislada)
 
 Cliente Android nativo con TDLib. No es Nicegram, no está afiliado a Telegram y no es el lector Centro de Alertas. Una cuenta real con identidad propia de aplicación. Esta edición Personal tiene paquete Android independiente (`mx.charly.canal.personal`) y requiere su propia sesión local; no reemplaza ni migra el CanalDeck 0.2 o el canal experimental Pick$. Código recuperado de `projects/canal` (PR #3) y aislado aquí; ningún otro producto se modifica.
 
@@ -60,3 +60,15 @@ TDLib: Boost 1.0. TDL Coroutines y Kotlin Coroutines: Apache 2.0. Textos de lice
 Esta rama se basa en el cliente estable v0.2, **no en el PR #5 v0.3 ni en el puente Pick$ v0.4+**. Solo mejora el uso personal. Sin reenvío de picks, servicios de apuestas, acceso a RS1000, alteración de main, envío automático ni uso de tokens en CI. La v0.3 Pick$ existe como PR Draft, no como Release. El repositorio sigue público; no subir sesiones ni credenciales.
 
 Firma debug efímera: al ser otro applicationId se instala en paralelo, pero no conserva la sesión anterior. Pruebas CI y emulador no certifican inicio de sesión real ni la recepción en el POCO/HyperOS 3.
+
+## Nueva iteración 0.3.2
+- Carpetas ordenables manualmente con acciones Subir/Bajar; favoritos y prioridad siguen independientes y por cuenta/chat-ID. La organización actual persiste entre arranques y actualizaciones **con el mismo applicationId y certificado de firma**.
+- Respaldo cifrado de organización en archivo .cdo con PBKDF2-HMAC-SHA256 (180,000 rondas) y AES-GCM. Usuario elige archivo con SAF y crea contraseña de 12+ caracteres. Incluye favoritos, orden/carpetas, prioridades y reglas locales. No incluye sesiones, imágenes, mensajes, teléfono, api_id ni api_hash. Para restaurar se necesita iniciar la **misma cuenta** de Telegram; contraseña incorrecta/archivo roto no se aplica.
+- Capturas configurables en chats normales, siempre bloqueadas en credenciales, chats con protección y medios no guardables. Reconoce que esa elección expone contenido privado.
+- Notificación de conexión claramente distinta del aviso de mensaje, vistas previas por consentimiento y avisos por chat; no cambia la entrega de HyperOS.
+- Enlaces públicos t.me/usuario[/mensaje] dentro de CanalDeck usando búsqueda oficial TDLib. Privados/invitaciones/no compatibles preguntan antes de salir; no se inventan IDs ni se bypass.
+- OCR local ML Kit Latin **empaquetado en APK** sobre fotos permitidas y elegidas manualmente. Reporta texto y términos candidatos; no verifica picks, cuotas, apuestas ni alimenta Super Bet, y no reenvía medios. Contenido protegido y autodestructivo excluido.
+- applicationId `mx.charly.canal.personal.v032` evita pisar la instalación v0.3.1: al ser firma debug temporal distinta, Android no permitiría actualizarla con seguridad. Una **única reconstrucción inicial de favoritos será necesaria si no existe un respaldo anterior compatible**. Esta versión tiene exportar/importar para los siguientes cambios; para actualizaciones automáticas permanentes aún se requiere firma estable privada configurada con GitHub Actions Secrets y mismo applicationId.
+- No se guarda ningún archivo de organización ni clave en GitHub. El repositorio continúa público. Datos y pruebas sintéticos solamente.
+
+Limitaciones: no constituye paridad Nicegram/Telegram Premium, no permite funciones server-side de pago, un solo usuario a la vez, sin push FCM. Capturas en contenido protegido NO. OCR puede fallar; faltan pruebas de usuario real, verificación del retraso con pantalla apagada y auditoría de medios/cuenta. Sin merge, deploy o cambios en SB/RS1000.
