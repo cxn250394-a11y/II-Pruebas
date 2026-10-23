@@ -1,0 +1,7 @@
+// Sandrift Karts v0.2 beta: only this module's version. Shared Android setup stays in ../build.gradle.
+android {
+    defaultConfig {
+        versionCode 2
+        versionName '0.2.0-beta'
+    }
+}
