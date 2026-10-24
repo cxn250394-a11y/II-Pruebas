@@ -1,0 +1,127 @@
+name: Calendario Familiar v0.1 | APK y pruebas
+on:
+  pull_request:
+    paths:
+      - 'apps/calendario-familiar/**'
+      - '.github/workflows/calendario-familiar.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: calendario-familiar-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    if: github.repository == 'cxn250394-a11y/II-Pruebas'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: apps/calendario-familiar
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: false
+      - name: Android SDK 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Privacy and icon contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          root=Path('app/src/main')
+          manifest=ET.parse(root/'AndroidManifest.xml').getroot()
+          ns='{http://schemas.android.com/apk/res/android}'
+          perms=[n.get(ns+'name') for n in manifest.findall('uses-permission')]
+          assert perms==['android.permission.RECEIVE_BOOT_COMPLETED'], perms
+          app=manifest.find('application')
+          assert app.get(ns+'allowBackup')=='false'
+          assert app.get(ns+'usesCleartextTraffic')=='false'
+          aliases=app.findall('activity-alias')
+          assert len(aliases)==31, len(aliases)
+          assert sum(a.get(ns+'enabled')=='true' for a in aliases)==1
+          assert aliases[23].get(ns+'enabled')=='true'
+          for day in range(1,32):
+              ET.parse(root/'res/drawable'/f'day_{day:02}.xml')
+          for path in root.rglob('*.xml'): ET.parse(path)
+          print("PASS: 31 icon variants, offline app, local private data.")
+          PY
+      - name: JVM tests, Lint, and Android APK
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug 2>&1 | tee build-calendario.log
+      - name: APK signature and provenance
+        run: |
+          mkdir -p ../../calendario-delivery
+          cp app/build/outputs/apk/debug/app-debug.apk ../../calendario-delivery/Calendario-Familiar-v0.1-beta.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs ../../calendario-delivery/Calendario-Familiar-v0.1-beta.apk > ../../calendario-delivery/APK-VERIFY.txt
+          cd ../../calendario-delivery
+          sha256sum Calendario-Familiar-v0.1-beta.apk > SHA256SUMS.txt
+          git -C .. rev-parse HEAD > SOURCE-COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Calendario-Familiar-v0.1-apk
+          path: calendario-delivery/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Test and Lint evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Calendario-Familiar-v0.1-tests
+          path: |
+            apps/calendario-familiar/build-calendario.log
+            apps/calendario-familiar/app/build/test-results/testDebugUnitTest/*.xml
+            apps/calendario-familiar/app/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+          retention-days: 14
+  emulator:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@v4
+        with:
+          name: Calendario-Familiar-v0.1-apk
+          path: calendario-delivery
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: bash apps/calendario-familiar/ci/emulator.sh
+      - name: Emulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Calendario-Familiar-v0.1-emulator
+          path: calendario-evidence/
+          if-no-files-found: warn
+          retention-days: 14
