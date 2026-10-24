@@ -5,7 +5,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Arrays;
-import org.junit.Assert.*;
+import static org.junit.Assert.*;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
