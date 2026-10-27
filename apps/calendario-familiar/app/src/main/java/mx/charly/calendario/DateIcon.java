@@ -16,11 +16,26 @@ import java.util.List;
 
 public final class DateIcon {
     private DateIcon(){}
+    // Disabling the launch alias can close an existing task, even while a document
+    // picker covers it. Keep the alias stable through pause and recreation.
+    private static int activities;
+    private static boolean taskRetained, pending;
+    public static synchronized void activityOpened(){activities++;taskRetained=true;}
+    public static synchronized void activityDestroyed(Context context,boolean finishing){
+        if(activities>0)activities--;
+        // A non-finishing destroy can be a configuration change or system reclaim.
+        // Keep deferring until an explicit finish or a fresh process.
+        if(finishing && activities==0){
+            taskRetained=false;
+            if(pending)refresh(context.getApplicationContext());
+        }
+    }
     public static String alias(int day){
         if(day<1||day>31)throw new IllegalArgumentException("Día fuera de rango");
         return "mx.charly.calendario.Day"+(day<10?"0":"")+day;
     }
-    public static void refresh(Context context){
+    public static synchronized void refresh(Context context){
+        if(taskRetained){pending=true;schedule(context.getApplicationContext());return;}
         int today=LocalDate.now().getDayOfMonth();
         PackageManager pm=context.getPackageManager();
         try {
@@ -38,6 +53,7 @@ public final class DateIcon {
                     pm.setComponentEnabledSetting(new ComponentName(context,alias(d)),PackageManager.COMPONENT_ENABLED_STATE_DISABLED,PackageManager.DONT_KILL_APP);
             }
             context.getSharedPreferences("ui",Context.MODE_PRIVATE).edit().putInt("last_icon_day",today).apply();
+            pending=false;
         }catch(Exception ignored){
             // Some third-party launchers disallow or cache alias changes; calendar functions remain usable.
         }

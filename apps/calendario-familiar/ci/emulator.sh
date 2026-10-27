@@ -16,7 +16,11 @@ APK="calendario-delivery/Calendario-Familiar-Terra-v0.2-beta.apk"
 adb install -r "$APK" > calendario-evidence/install.txt
 grep -q 'Success' calendario-evidence/install.txt
 adb logcat -c
-adb shell am start -W -n mx.charly.calendario.terra/mx.charly.calendario.Day24 > calendario-evidence/start.txt
+# Resolve the currently enabled launcher alias; its day need not be 24.
+LAUNCHER=$(adb shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER mx.charly.calendario.terra | tr -d '\r' | tail -1)
+[[ "$LAUNCHER" =~ ^mx\.charly\.calendario\.terra/mx\.charly\.calendario\.Day[0-9][0-9]$ ]]
+printf '%s\n' "$LAUNCHER" > calendario-evidence/launcher.txt
+adb shell am start -W -n "$LAUNCHER" > calendario-evidence/start.txt
 sleep 5
 adb shell pidof mx.charly.calendario.terra > calendario-evidence/pid.txt
 adb exec-out screencap -p > calendario-evidence/month.png
@@ -25,6 +29,27 @@ adb pull /sdcard/calendar-ui.xml calendario-evidence/month.xml >/dev/null
 grep -q 'Calendario Familiar' calendario-evidence/month.xml
 grep -q 'Pintar varios días' calendario-evidence/month.xml
 grep -q 'Mamá' calendario-evidence/month.xml
+grep -q 'Ver semana' calendario-evidence/month.xml
+# Force a configuration recreation while the launcher alias remains in use.
+adb shell settings put system accelerometer_rotation 0
+adb shell settings put system user_rotation 1
+sleep 4
+adb shell uiautomator dump /sdcard/calendar-rotated.xml >/dev/null
+adb pull /sdcard/calendar-rotated.xml calendario-evidence/rotated.xml >/dev/null
+grep -q 'mx.charly.calendario.terra' calendario-evidence/rotated.xml
+adb exec-out screencap -p > calendario-evidence/rotated.png
+python3 - <<'PY'
+import struct
+from pathlib import Path
+header=Path('calendario-evidence/rotated.png').read_bytes()[:24]
+assert header[:8] == b'\x89PNG\r\n\x1a\n'
+width,height=struct.unpack('>II',header[16:24])
+assert width>height, f'No landscape rotation: {width}x{height}'
+PY
+adb shell settings put system user_rotation 0
+sleep 4
+adb shell uiautomator dump /sdcard/calendar-ui.xml >/dev/null
+adb pull /sdcard/calendar-ui.xml calendario-evidence/month.xml >/dev/null
 grep -q 'Ver semana' calendario-evidence/month.xml
 # Locate the actual native button using UI Automator rather than guessing screen coordinates.
 python3 - <<'PY' > calendario-evidence/week-tap.txt
@@ -48,4 +73,4 @@ grep -q 'Vista grande' calendario-evidence/week.xml
 adb exec-out screencap -p > calendario-evidence/week.png
 adb logcat -d -s AndroidRuntime:E > calendario-evidence/crashes.txt
 if grep -q 'FATAL EXCEPTION' calendario-evidence/crashes.txt; then cat calendario-evidence/crashes.txt; exit 1; fi
-echo 'PASS: install, cold start, two profiles and paint action visible. Not tested physically on POCO or midnight launcher cache.' > calendario-evidence/SUMMARY.txt
+echo 'PASS: install, cold start, rotation with calendar visible, and navigation to week. Not tested physically on POCO, with TalkBack, or for midnight launcher cache.' > calendario-evidence/SUMMARY.txt

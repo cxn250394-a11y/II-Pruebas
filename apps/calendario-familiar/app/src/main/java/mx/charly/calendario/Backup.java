@@ -109,8 +109,11 @@ public final class Backup {
             if(!o.isNull("category") && !Integer.valueOf(profile).equals(categoryOwner.get(o.getLong("category"))))
                 throw new IllegalArgumentException("Categoría de otro perfil o ausente");
         }
+        if(fonts.length()!=2)throw new IllegalArgumentException("Se requiere un tamaño de letra por perfil");
+        Set<Integer> fontProfiles=new HashSet<>();
         for(int i=0;i<fonts.length();i++){
-            JSONObject o=fonts.getJSONObject(i);CalStore.checkProfile(o.getInt("profile"));
+            JSONObject o=fonts.getJSONObject(i);int profile=o.getInt("profile");CalStore.checkProfile(profile);
+            if(!fontProfiles.add(profile))throw new IllegalArgumentException("Perfil de letra duplicado");
             if(o.getInt("size")<0||o.getInt("size")>2)throw new IllegalArgumentException("Letra inválida");
         }
         SQLiteDatabase db=store.getWritableDatabase();db.beginTransaction();
@@ -135,7 +138,8 @@ public final class Backup {
             }
             for(int i=0;i<fonts.length();i++){
                 JSONObject o=fonts.getJSONObject(i);ContentValues v=new ContentValues();v.put("font_size",o.getInt("size"));
-                db.update("profiles",v,"id=?",new String[]{""+o.getInt("profile")});
+                if(db.update("profiles",v,"id=?",new String[]{""+o.getInt("profile")})!=1)
+                    throw new IllegalStateException("No se pudo restaurar el perfil");
             }
             db.setTransactionSuccessful();
         }finally{db.endTransaction();}
