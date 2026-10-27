@@ -1,5 +1,7 @@
 package mx.charly.kart
 
+import android.os.SystemClock
+
 import com.badlogic.gdx.*
 import com.badlogic.gdx.graphics.*
 import com.badlogic.gdx.graphics.g2d.*
@@ -15,7 +17,7 @@ import mx.charly.logic.Race
 import kotlin.math.*
 
 /** Sandrift Karts v0.2: original procedural 3D arcade racer. Rules live in :logic Race; this class only renders and reads input. */
-class SandriftGame(private val autostart:Boolean=false):ApplicationAdapter(){
+class SandriftGame(private val autostart:Boolean=false, private val debugState:Boolean=false):ApplicationAdapter(){
  private lateinit var batch:ModelBatch;private lateinit var sprites:SpriteBatch;private lateinit var shapes:ShapeRenderer;private lateinit var font:BitmapFont
  private lateinit var camera:PerspectiveCamera;private lateinit var overlay:OrthographicCamera;private lateinit var viewport:ExtendViewport;private lateinit var env:Environment
  private lateinit var prefs:Preferences
@@ -23,7 +25,7 @@ class SandriftGame(private val autostart:Boolean=false):ApplicationAdapter(){
  private var race=Race();private var track=0;private var vehicle=0;private var skin=0;private var mode=0;private var difficulty=1
  private var controls=ControlSettings();private var cup:Cup?=null;private var recorded=false
  private var inMenu=true;private var paused=false;private var menuTime=0f;private var time=0f;private var steer=0f;private var tiltZero=0f;private var best=Float.MAX_VALUE
- private val perf=PerfMeter();private var perfClock=0f
+ private val perf=PerfMeter();private var perfClock=0f;private var debugStateLastNs=0L
  private val touches=BooleanArray(10);private var buttons:Map<String,Box> =emptyMap()
  private val labels=mutableListOf<Triple<String,Box,Color>>();private val texts=mutableListOf<Triple<String,Vector2,Pair<Float,Color>>>()
  private val itemNames=mapOf("NITRO" to "TURBO","SHIELD" to "ESCUDO","PULSE" to "PULSO","MINE" to "MINA")
@@ -74,6 +76,11 @@ class SandriftGame(private val autostart:Boolean=false):ApplicationAdapter(){
  }}
  override fun render(){
   val raw=Gdx.graphics.deltaTime;val dt=raw.coerceIn(0f,.05f);input(dt);menuTime+=dt
+  // Only debuggable builds emit synthetic-test state; release builds expose no telemetry.
+  if(debugState && System.nanoTime()-debugStateLastNs>=2_000_000_000L){
+   debugStateLastNs=System.nanoTime()
+   Gdx.app.log("SandriftState", "SANDRIFT_STATE boot_ms=${SystemClock.elapsedRealtime()} menu=$inMenu paused=$paused finished=${race.finished} elapsed=${race.elapsed}")
+  }
   if(!inMenu&&!paused&&!race.finished){race.step(dt,steer,held("drift")||Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT),held("brake")||Gdx.input.isKeyPressed(Input.Keys.DOWN),
    (held("gas")||Gdx.input.isKeyPressed(Input.Keys.UP)||autostart));time+=dt}
   if(!inMenu&&!paused){perf.add(raw);perfClock+=raw;if(perfClock>=5f){perfClock=0f;Gdx.app.log("SandriftPerf",perf.summary("track=$track ${Gdx.graphics.width}x${Gdx.graphics.height}"))}}
