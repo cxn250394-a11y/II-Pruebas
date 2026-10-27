@@ -15,11 +15,23 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.*
+import java.lang.ref.WeakReference
 
 /** UI components scoped to CanalDeck. Dialogs are protected independently of the activity window. */
 open class Screen : Activity() {
     /** Activity decides per visible content; identity and protected media always remain protected. */
     protected var allowDialogScreenshots = false
+    private val dialogs = mutableListOf<WeakReference<AlertDialog>>()
+    /** Restrict already-open windows as soon as visible content becomes unsafe.
+     * Never clear FLAG_SECURE on an existing dialog; a later dialog may opt in. */
+    protected fun protectOpenDialogs() {
+        dialogs.removeAll { it.get() == null }
+        dialogs.forEach { it.get()?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+    }
+    protected fun dismissOpenDialogs() {
+        dialogs.mapNotNull { it.get() }.toList().forEach { it.dismiss() }
+        dialogs.clear()
+    }
     protected val ink = Color.rgb(12,20,32)
     protected val accent = Color.rgb(95,226,187)
     protected val soft = Color.rgb(180,194,213)
@@ -65,7 +77,11 @@ open class Screen : Activity() {
         onItemSelectedListener=object:AdapterView.OnItemSelectedListener{override fun onNothingSelected(p:AdapterView<*>?){};override fun onItemSelected(p:AdapterView<*>?,v:View?,pos:Int,id:Long){action(pos)}}
     }.also{body.addView(it)}
     protected fun dialog(): AlertDialog.Builder = object : AlertDialog.Builder(this) {
-        override fun create(): AlertDialog = super.create().apply { if (!allowDialogScreenshots) window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+        override fun create(): AlertDialog = super.create().apply {
+            dialogs.removeAll { it.get() == null }
+            dialogs.add(WeakReference(this))
+            if (!allowDialogScreenshots) window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
         override fun show(): AlertDialog = create().also { it.show() }
     }
     protected fun prompt(title:String,value:String="",action:(String)->Unit){

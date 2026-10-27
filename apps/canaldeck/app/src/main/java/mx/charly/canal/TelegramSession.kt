@@ -41,6 +41,7 @@ class TelegramSession private constructor(private val context: Context) {
     private val client = TdlClient.create()
     val observers = CopyOnWriteArrayList<() -> Unit>()
     val messageObservers = CopyOnWriteArrayList<(Long) -> Unit>()
+    val privacyObservers = CopyOnWriteArrayList<(Long) -> Unit>()
     val chats = linkedMapOf<Long, Chat>()
     val recent = linkedMapOf<Pair<Long, Long>, Message>()
     val removed = linkedSetOf<Pair<Long, Long>>()
@@ -58,15 +59,22 @@ class TelegramSession private constructor(private val context: Context) {
     var onPrivacyChange: ((Long) -> Unit)? = null
     private val privacyFence = PrivacyFence()
     fun privacyPending(chat: Long): Boolean = privacyFence.isPending(chat)
+    private val restrictedMessageChats = mutableSetOf<Long>()
+    fun sawRestrictedMessage(chat: Long): Boolean = chat in restrictedMessageChats
+    private fun privacyChanged(chat: Long) {
+        privacyObservers.forEach { it(chat) }
+        onPrivacyChange?.invoke(chat)
+        notifyUi()
+    }
     /** All asynchronous Chat writes go through the same generation check. */
     private fun storeChat(chat: Chat, snapshot: Long, confirmsProtection: Boolean = false): Boolean {
         val previousProtected = chats[chat.id]?.hasProtectedContent == true
         if (chat.hasProtectedContent && privacyFence.observeProtected(chat.id, snapshot, previousProtected)) {
-            onPrivacyChange?.invoke(chat.id)
+            privacyChanged(chat.id)
             refreshChat(chat.id)
             return false
         }
-        if (chat.hasProtectedContent && !previousProtected) onPrivacyChange?.invoke(chat.id)
+        if (chat.hasProtectedContent && !previousProtected) privacyChanged(chat.id)
         return privacyFence.store(chat.id, snapshot, chat.hasProtectedContent, chat, chats, confirmsProtection)
     }
     private var configured = false
@@ -76,7 +84,16 @@ class TelegramSession private constructor(private val context: Context) {
 
     private fun notifyUi() { observers.forEach { it() } }
     private fun notifyMessages(chat: Long) { messageObservers.forEach { it(chat) } }
-    private fun record(m: Message) { recent[m.chatId to m.id] = m; while (recent.size > 256) recent.remove(recent.keys.first()); notifyMessages(m.chatId) }
+    fun observeMessagePrivacy(m: Message) {
+        if (!m.canBeSaved || m.selfDestructType != null) {
+            restrictedMessageChats.add(m.chatId)
+            privacyChanged(m.chatId)
+        }
+    }
+    private fun record(m: Message) {
+        observeMessagePrivacy(m)
+        recent[m.chatId to m.id] = m; while (recent.size > 256) recent.remove(recent.keys.first()); notifyMessages(m.chatId)
+    }
     private fun forget(chat: Long, ids: LongArray) { ids.forEach { removed.add(chat to it); recent.remove(chat to it) }; while (removed.size > 512) removed.remove(removed.first()); notifyMessages(chat) }
     private fun begin() {
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -99,7 +116,7 @@ class TelegramSession private constructor(private val context: Context) {
                     is UpdateChatHasProtectedContent -> {
                         // Invalidate posted text immediately and keep new messages redacted
                         // until a matching, fresh GetChat result confirms the change.
-                        privacyFence.changed(u.chatId, u.hasProtectedContent); onPrivacyChange?.invoke(u.chatId); refreshChat(u.chatId)
+                        privacyFence.changed(u.chatId, u.hasProtectedContent); privacyChanged(u.chatId); refreshChat(u.chatId)
                     }
                     is UpdateChatReadInbox -> { refreshChat(u.chatId); if (u.unreadCount == 0) onRead?.invoke(u.chatId) }
                     is UpdateChatReadOutbox -> refreshChat(u.chatId)
