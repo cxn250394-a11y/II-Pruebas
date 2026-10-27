@@ -35,6 +35,8 @@ public final class MainActivity extends Activity {
     private CalStore store;
     private int profile=1,brush=Palette.COLORS[0];
     private boolean painting=false;
+    private LocalDate lastPaintDate;
+    private int lastPaintPrevious,lastPaintProfile;
     private YearMonth currentMonth=YearMonth.now();
     private LocalDate selected=LocalDate.now();
     private String page="month";
@@ -129,6 +131,7 @@ public final class MainActivity extends Activity {
         setContentView(root);
         switch(page){
             case "day":drawDay();break;
+            case "week":drawWeek();break;
             case "categories":drawCategories();break;
             case "settings":drawSettings();break;
             default:page="month";drawMonth();
@@ -136,7 +139,7 @@ public final class MainActivity extends Activity {
     }
     private void switchProfile(int p){
         if(profile==p)return;
-        profile=p;painting=false;page="month";currentMonth=YearMonth.now();
+        profile=p;painting=false;page="month";currentMonth=YearMonth.now();lastPaintDate=null;
         getPreferences(MODE_PRIVATE).edit().putInt("active_profile",p).apply();render();
     }
     private void drawMonth(){
@@ -150,6 +153,10 @@ public final class MainActivity extends Activity {
         weighted(controls,secondary("Hoy",()->{currentMonth=YearMonth.now();selected=LocalDate.now();painting=false;render();}),5);
         weighted(controls,secondary("Colores de eventos",()->{page="categories";painting=false;render();}),0);
         add(body,controls,6);
+        add(body,secondary("Ver semana · letras más grandes",()->{
+            selected=YearMonth.from(selected).equals(currentMonth)?selected:currentMonth.atDay(1);
+            page="week";painting=false;render();
+        }),7);
         if(painting){
             LinearLayout hint=card(body,0xFFECE8F5);
             hint.addView(label("Modo pintar · toca varios días",17,true,PURPLE));
@@ -158,6 +165,7 @@ public final class MainActivity extends Activity {
             weighted(actions,secondary("Cambiar color",()->pickColor(c->{brush=c;render();})),5);
             weighted(actions,secondary("Terminar",()->{painting=false;render();}),0);
             add(hint,actions,4);
+            add(hint,secondary("Deshacer último día pintado",()->undoLastPaint()),5);
         }else{
             add(body,primary("Pintar varios días",()->pickColor(c->{brush=c;painting=true;render();})),8);
         }
@@ -170,7 +178,7 @@ public final class MainActivity extends Activity {
         CalStore.MonthData monthData=store.month(profile,currentMonth);
         MonthGrid grid=new MonthGrid(this,currentMonth,monthData,store.fontSize(profile),date->{
             if(painting){
-                store.paint(profile,date.toString(),brush);
+                paintDay(date,brush);
                 monthData.backgrounds.put(date.toString(),brush);
                 gridInvalidateByDate(monthData,date,brush);
             }else{
@@ -185,6 +193,19 @@ public final class MainActivity extends Activity {
         expl.addView(label("Las tarjetas muestran una parte del nombre; en el detalle del día verás texto más grande y completo.",13,false,0xFF5B667A));
         add(body,secondary("Tamaño de letra y respaldo",()->{page="settings";painting=false;render();}),10);
     }
+    private void paintDay(LocalDate date,int color){
+        int previous=store.dayColor(profile,date.toString());
+        if(previous==color)return;
+        store.paint(profile,date.toString(),color);
+        lastPaintDate=date;lastPaintPrevious=previous;lastPaintProfile=profile;
+    }
+    private void undoLastPaint(){
+        if(lastPaintDate==null || lastPaintProfile!=profile){
+            toast("Todavía no hay un color que deshacer");return;
+        }
+        store.paint(profile,lastPaintDate.toString(),lastPaintPrevious);
+        lastPaintDate=null;render();
+    }
     /** Called after a paint operation; redraw the month without resetting scroll position. */
     private void gridInvalidateByDate(CalStore.MonthData data,LocalDate date,int color){
         View v=body.findViewWithTag("month-grid");if(v!=null)v.invalidate();
@@ -196,9 +217,11 @@ public final class MainActivity extends Activity {
         day.addView(label(dateTitle(selected),23,true,fg));
         day.addView(label(selected.format(DateTimeFormatter.ofPattern("uuuu-MM-dd")),13,false,fg));
         LinearLayout actions=row();
-        weighted(actions,secondary("Pintar día",()->pickColor(c->{store.paint(profile,selected.toString(),c);render();})),5);
-        weighted(actions,secondary("Quitar color",()->{store.paint(profile,selected.toString(),Palette.DEFAULT_DAY);render();}),0);
+        weighted(actions,secondary("Pintar día",()->pickColor(c->{paintDay(selected,c);render();})),5);
+        weighted(actions,secondary("Quitar color",()->{paintDay(selected,Palette.DEFAULT_DAY);render();}),0);
         add(body,actions,10);
+        if(lastPaintDate!=null&&lastPaintProfile==profile)
+            add(body,secondary("Deshacer último color",()->undoLastPaint()),6);
         add(body,primary("+ Añadir evento o cita",()->editEvent(null)),9);
         List<CalStore.Event> events=store.events(profile,selected.toString());
         add(body,label("Eventos de este día ("+events.size()+")",19,true,INK),17);
