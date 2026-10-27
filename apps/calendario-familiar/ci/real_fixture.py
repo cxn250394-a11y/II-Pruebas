@@ -123,6 +123,24 @@ def check_database(date):
             f'day_color=Cielo(0xFFD6EBFA); profile Mamá has no fixture.\n')
 
 
+def find_saved_week_card():
+    # A test that straddles midnight on Sunday can restart in a different
+    # week. Search current, previous and next week, bounded to one step.
+    for attempt, navigation in enumerate((None, 'Semana anterior', 'Semana siguiente', 'Semana siguiente')):
+        if navigation:
+            tap_text(navigation)
+        # On the third move we have reached the week after the original one;
+        # skip the intermediate return to the original week.
+        if attempt == 2:
+            continue
+        root = dump('week-after-restart')
+        cards = find(root, lambda n: n.get('clickable') == 'true' and TITLE in n.get('content-desc', ''))
+        assert len(cards) <= 1, f'Duplicate fixture cards: {len(cards)}'
+        if cards:
+            return cards[0]
+    raise AssertionError('Persisted fixture not visible in current or adjacent weeks')
+
+
 def main():
     # emulator.sh already navigated to week using the real app. Choose its first
     # empty day, which remains visible even if the current week spans months.
@@ -150,13 +168,11 @@ def main():
     check_database(date)
     start_launcher()
     tap_text('Ver semana')
-    root = dump('week-after-restart')
-    cards = find(root, lambda n: n.get('clickable') == 'true' and TITLE in n.get('content-desc', ''))
-    assert len(cards) == 1, f'Expected persisted event in accessible weekly card: {len(cards)}'
-    description = cards[0].get('content-desc', '')
+    card = find_saved_week_card()
+    description = card.get('content-desc', '')
     assert '09:30' in description and NOTE in description, description
     capture('fixture-week-after-restart.png')
-    tap_node(cards[0])
+    tap_node(card)
     root = dump('day-after-restart')
     visible = ' '.join((n.get('text', '') + ' ' + n.get('content-desc', '')) for n in root.iter())
     assert date in visible, visible

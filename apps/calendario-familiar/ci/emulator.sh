@@ -15,6 +15,13 @@ trap diagnose_failure EXIT
 APK="calendario-delivery/Calendario-Familiar-Terra-v0.2-beta.apk"
 adb install -r "$APK" > calendario-evidence/install.txt
 grep -q 'Success' calendario-evidence/install.txt
+# This script is destructive only to the disposable emulator's test package.
+# Never clear app data on a physical device or an unrecognized target.
+SERIAL=$(adb get-serialno | tr -d '\r')
+QEMU=$(adb shell getprop ro.kernel.qemu | tr -d '\r')
+[[ "$SERIAL" == emulator-* && "$QEMU" == 1 ]] || { echo 'Refusing to clear data outside an Android emulator' >&2; exit 1; }
+adb shell pm clear mx.charly.calendario.terra > calendario-evidence/clear-disposable-package.txt
+grep -q '^Success' calendario-evidence/clear-disposable-package.txt
 adb logcat -c
 # Resolve the currently enabled launcher alias; its day need not be 24.
 LAUNCHER=$(adb shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER mx.charly.calendario.terra | tr -d '\r' | tail -1)
