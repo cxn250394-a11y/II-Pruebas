@@ -1,4 +1,4 @@
-name: Calendario Familiar v0.1 | APK y pruebas
+name: Calendario Familiar Terra v0.2 | APK y pruebas
 on:
   pull_request:
     paths:
@@ -44,7 +44,7 @@ jobs:
           manifest=ET.parse(root/'AndroidManifest.xml').getroot()
           ns='{http://schemas.android.com/apk/res/android}'
           perms=[n.get(ns+'name') for n in manifest.findall('uses-permission')]
-          assert perms==['android.permission.RECEIVE_BOOT_COMPLETED'], perms
+          assert perms==[], perms
           app=manifest.find('application')
           assert app.get(ns+'allowBackup')=='false'
           assert app.get(ns+'usesCleartextTraffic')=='false'
@@ -52,10 +52,15 @@ jobs:
           assert len(aliases)==31, len(aliases)
           assert sum(a.get(ns+'enabled')=='true' for a in aliases)==1
           assert aliases[23].get(ns+'enabled')=='true'
+          assert app.get(ns+'icon')=='@drawable/calendar_generic'
+          assert all(a.get(ns+'icon')=='@drawable/calendar_generic' for a in aliases)
+          ET.parse(root/'res/drawable/calendar_generic.xml')
+          for source in (root/'java').rglob('*.java'):
+              assert 'setComponentEnabledSetting' not in source.read_text(), source
           for day in range(1,32):
               ET.parse(root/'res/drawable'/f'day_{day:02}.xml')
           for path in root.rglob('*.xml'): ET.parse(path)
-          print("PASS: 31 icon variants, offline app, local private data.")
+          print("PASS: legacy aliases use generic static icon; offline app, local private data.")
           PY
       - name: JVM tests, Lint, and Android APK
         run: |
@@ -64,14 +69,14 @@ jobs:
       - name: APK signature and provenance
         run: |
           mkdir -p ../../calendario-delivery
-          cp app/build/outputs/apk/debug/app-debug.apk ../../calendario-delivery/Calendario-Familiar-v0.1-beta.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs ../../calendario-delivery/Calendario-Familiar-v0.1-beta.apk > ../../calendario-delivery/APK-VERIFY.txt
+          cp app/build/outputs/apk/debug/app-debug.apk ../../calendario-delivery/Calendario-Familiar-Terra-v0.2-beta.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs ../../calendario-delivery/Calendario-Familiar-Terra-v0.2-beta.apk > ../../calendario-delivery/APK-VERIFY.txt
           cd ../../calendario-delivery
-          sha256sum Calendario-Familiar-v0.1-beta.apk > SHA256SUMS.txt
+          sha256sum Calendario-Familiar-Terra-v0.2-beta.apk > SHA256SUMS.txt
           git -C .. rev-parse HEAD > SOURCE-COMMIT.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Calendario-Familiar-v0.1-apk
+          name: Calendario-Familiar-Terra-v0.2-apk
           path: calendario-delivery/
           if-no-files-found: error
           retention-days: 14
@@ -79,7 +84,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Calendario-Familiar-v0.1-tests
+          name: Calendario-Familiar-Terra-v0.2-tests
           path: |
             apps/calendario-familiar/build-calendario.log
             apps/calendario-familiar/app/build/test-results/testDebugUnitTest/*.xml
@@ -101,7 +106,7 @@ jobs:
           java-version: '17'
       - uses: actions/download-artifact@v4
         with:
-          name: Calendario-Familiar-v0.1-apk
+          name: Calendario-Familiar-Terra-v0.2-apk
           path: calendario-delivery
       - name: Enable KVM
         run: |
@@ -121,7 +126,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Calendario-Familiar-v0.1-emulator
+          name: Calendario-Familiar-Terra-v0.2-emulator
           path: calendario-evidence/
           if-no-files-found: warn
           retention-days: 14

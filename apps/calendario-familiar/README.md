@@ -6,7 +6,7 @@ APK **offline**, dos perfiles (Yo y Mamá), días enteros coloreables y tarjetas
 - Vista mensual de 7 columnas: fondo de cada día usa color elegido. Las tarjetas cortas llevan color propio de su categoría. Tocar día abre el detalle grande, completo y legible. Pulsar “Pintar varios días” activa modo brochazo para colorear fechas rápidamente.
 - 24 colores (pastel, alegres, neón) con contraste calculado automáticamente; las categorías tienen nombre completo y etiqueta corta, por ejemplo «ISSSTE Balbuena» → «ISSSTE».
 - Dos calendarios separados en una sola app; no se crean eventos ni días coloreados artificialmente. Categorías de ejemplo editables para IMSS/ISSSTE y Oficina/Personal.
-- El icono incluye el **número del día actual**. Hay 31 variantes locales y un receptor/alarma aproximada para cambiar la variante; se verifica también al abrir la app. HyperOS u otros launchers pueden cachear el icono o retrasar la actualización, por lo que no garantizamos cambio exacto a medianoche.
+- El icono es genérico y fijo: no muestra el día. El cambio automático de fecha queda bloqueado mientras se corrige el cierre inesperado de la aplicación.
 - Respaldo local cifrado con contraseña (PBKDF2-HMAC-SHA256 + AES/GCM). No contiene contraseñas, cuentas ni servicios externos. Las importaciones se validan antes de modificar datos.
 
 ## Reglas
