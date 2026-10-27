@@ -226,14 +226,14 @@ public final class MainActivity extends Activity {
             int ink=Palette.text(dayColor);
             List<CalStore.Event> events=store.events(profile,date.toString());
             LinearLayout dayCard=card(body,dayColor);
-            dayCard.setMinHeight(d(78));
+            dayCard.setMinimumHeight(d(78));
             dayCard.addView(label(dateTitle(date),21,true,ink));
             if(events.isEmpty())dayCard.addView(label("Sin eventos",15,false,ink));
             else for(CalStore.Event event:events){
                 LinearLayout tile=column();
                 tile.setPadding(d(13),d(8),d(13),d(8));
                 tile.setBackground(shape(event.color,11,0));
-                tile.setMinHeight(d(57));
+                tile.setMinimumHeight(d(57));
                 tile.addView(label(WeekRules.eventLine(event),17,true,Palette.text(event.color)));
                 if(!event.note.isEmpty())
                     tile.addView(label(event.note,14,false,Palette.text(event.color)));
