@@ -46,7 +46,6 @@ public final class MainActivity extends Activity {
     private final Locale locale=new Locale("es","MX");
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
-        DateIcon.activityOpened();
         store=new CalStore(this);
         profile=getPreferences(MODE_PRIVATE).getInt("active_profile",1);
         if(profile!=1 && profile!=2)profile=1;
@@ -56,14 +55,11 @@ public final class MainActivity extends Activity {
             currentMonth=YearMonth.parse(state.getString("month",YearMonth.now().toString()));
             selected=LocalDate.parse(state.getString("selected",LocalDate.now().toString()));
         }
-        DateIcon.refresh(this);
         render();
     }
-    @Override protected void onResume(){super.onResume();DateIcon.scheduleOnly(this);}
     @Override protected void onDestroy(){
         if(backupPassword!=null)Arrays.fill(backupPassword,'\0');
         if(store!=null)store.close();
-        DateIcon.activityDestroyed(this,isFinishing());
         super.onDestroy();
     }
     @Override protected void onSaveInstanceState(Bundle out){
@@ -328,9 +324,8 @@ public final class MainActivity extends Activity {
         add(copy,primary("Exportar respaldo protegido",()->backupPrompt(true)),9);
         add(copy,secondary("Restaurar respaldo",()->backupPrompt(false)),7);
         LinearLayout about=card(body,WHITE);
-        about.addView(label("Icono con la fecha",18,true,INK));
-        about.addView(label("El número del icono corresponde al día del mes. El cambio se programa y, si el calendario está abierto, se aplaza hasta cerrarlo; algunos lanzadores de Android, incluido HyperOS, pueden mostrarlo con retraso.",14,false,0xFF5B6576));
-        add(about,secondary("Actualizar icono al cerrar",()->{DateIcon.refresh(this);toast("La actualización se intentará al cerrar el calendario");}),7);
+        about.addView(label("Icono del calendario",18,true,INK));
+        about.addView(label("El icono es fijo y no muestra la fecha. La actualización automática del número está pendiente de reparación.",14,false,0xFF5B6576));
         add(body,label("Sin anuncios, sin Internet y sin lectura de otros calendarios. Los datos se guardan en este dispositivo.",13,false,0xFF697486),14);
     }
     private void pickColor(java.util.function.Consumer<Integer> chosen){

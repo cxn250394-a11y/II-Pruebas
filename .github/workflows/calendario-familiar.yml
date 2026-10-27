@@ -44,7 +44,7 @@ jobs:
           manifest=ET.parse(root/'AndroidManifest.xml').getroot()
           ns='{http://schemas.android.com/apk/res/android}'
           perms=[n.get(ns+'name') for n in manifest.findall('uses-permission')]
-          assert perms==['android.permission.RECEIVE_BOOT_COMPLETED'], perms
+          assert perms==[], perms
           app=manifest.find('application')
           assert app.get(ns+'allowBackup')=='false'
           assert app.get(ns+'usesCleartextTraffic')=='false'
@@ -52,10 +52,15 @@ jobs:
           assert len(aliases)==31, len(aliases)
           assert sum(a.get(ns+'enabled')=='true' for a in aliases)==1
           assert aliases[23].get(ns+'enabled')=='true'
+          assert app.get(ns+'icon')=='@drawable/calendar_generic'
+          assert all(a.get(ns+'icon')=='@drawable/calendar_generic' for a in aliases)
+          ET.parse(root/'res/drawable/calendar_generic.xml')
+          for source in (root/'java').rglob('*.java'):
+              assert 'setComponentEnabledSetting' not in source.read_text(), source
           for day in range(1,32):
               ET.parse(root/'res/drawable'/f'day_{day:02}.xml')
           for path in root.rglob('*.xml'): ET.parse(path)
-          print("PASS: 31 icon variants, offline app, local private data.")
+          print("PASS: legacy aliases use generic static icon; offline app, local private data.")
           PY
       - name: JVM tests, Lint, and Android APK
         run: |
