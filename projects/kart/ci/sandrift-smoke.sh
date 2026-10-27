@@ -113,8 +113,11 @@ alive && ! crashed && pass "race-running" || fail "race-running"
 
 # 4) Verify visible PAUSA and CONTINUAR controls by frame telemetry.
 # Two previous BACK-only runs were red; this test does not assume BACK works.
-adb logcat -c
 touch_screen 93 11
+# Allow any in-flight 5-second FPS log to be emitted before measuring silence.
+# A log timestamped right before PAUSA is not evidence that the race kept moving.
+sleep 2
+adb logcat -c
 sleep 7
 shot 05-paused
 alive && ! crashed || fail "pause-touch-crash"
