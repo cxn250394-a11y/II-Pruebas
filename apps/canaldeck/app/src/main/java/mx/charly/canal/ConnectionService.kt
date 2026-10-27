@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import dev.g000sha256.tdl.dto.Message
+import dev.g000sha256.tdl.dto.ChatTypeSecret
 import java.util.Calendar
 
 /** Visible, opt-in connection. No FCM credentials, hidden receiver or restart after explicit stop. */
@@ -21,14 +22,30 @@ class ConnectionService : Service() {
     private val lines = linkedMapOf<Long, MutableList<String>>()
     private val importantChats = linkedSetOf<Long>()
     private var session: TelegramSession? = null
-    private val observer: () -> Unit = { updateConnection(); if (TelegramSession.current == null) stopSelf() }
+    private val observer: () -> Unit = {
+        updateConnection()
+        // A refreshed chat can reveal a restriction even without a new message.
+        val s = session
+        if (s != null) lines.keys.toList().forEach { id ->
+            val chat = s.chats[id]
+            if (chat == null || s.privacyPending(id) || chat.hasProtectedContent || chat.type is ChatTypeSecret) clear(id)
+        }
+        if (TelegramSession.current == null) stopSelf()
+    }
     override fun onCreate() {
         super.onCreate(); current = this; lastError = null
         manager.createNotificationChannel(NotificationChannel("connection", "Conexión de CanalDeck", NotificationManager.IMPORTANCE_LOW))
+        // A process can die while Android retains posted notifications. Remove only
+        // our per-chat notices, whose privacy metadata must be reacquired.
+        try {
+            manager.activeNotifications.filter { it.id == 2000 && it.tag?.toLongOrNull() != null }
+                .forEach { manager.cancel(it.tag, it.id) }
+            manager.cancel(2); manager.cancel(3)
+        } catch (_: Exception) { /* Android may not expose active notices on a vendor build. */ }
         startForeground(1, connectionNotification("Iniciando motor de Telegram"))
         try {
             session = TelegramSession.start(this)
-            session?.onMessage = { notice(it) }; session?.onRead = { clear(it) }
+            session?.onMessage = { notice(it) }; session?.onRead = { clear(it) }; session?.onPrivacyChange = { clear(it) }
             session?.observers?.add(observer); updateConnection()
         } catch (_: Throwable) { lastError = "No se pudo cargar el motor de Telegram. No se inició sesión."; stopSelf() }
     }
@@ -56,13 +73,18 @@ class ConnectionService : Service() {
         if (chat != null && m.id <= chat.lastReadInboxMessageId) return
         val important = org.important(m.chatId)
         val channelId = channel(m.chatId,important)
+        val allowText = NoticePrivacy.allowText(org.previews, chat != null, s.privacyPending(m.chatId),
+            chat?.hasProtectedContent == true, chat?.type is ChatTypeSecret,
+            m.canBeSaved, m.selfDestructType != null)
         manager.createNotificationChannel(NotificationChannel(channelId,
-            (if (important) "Prioritario · " else "")+(chat?.title?.take(70) ?: "Conversación ${m.chatId}"),
+            if (important) "CanalDeck · prioritario" else "CanalDeck · conversación",
             if (important) NotificationManager.IMPORTANCE_HIGH else NotificationManager.IMPORTANCE_DEFAULT))
-        val title = chat?.title ?: "Nueva publicación"
-        val privateContent = chat?.hasProtectedContent == true || m.selfDestructType != null
-        val preview = if(org.previews && !privateContent) raw.take(220) else "Mensaje nuevo · abrir CanalDeck"
-        val recent = lines.getOrPut(m.chatId){mutableListOf()};recent.add(preview);while(recent.size>5)recent.removeAt(0)
+        val title = if (allowText) chat?.title ?: "Nueva publicación" else "Nueva publicación"
+        // Remove earlier text lines before publishing a redacted notification.
+        if (!allowText) clear(m.chatId)
+        val recent = NoticePrivacy.appendRecent(lines[m.chatId].orEmpty(), raw, allowText).toMutableList()
+        lines[m.chatId] = recent
+        val preview = recent.last()
         if(important)importantChats.add(m.chatId)else importantChats.remove(m.chatId)
         while(lines.size>30){val id=lines.keys.first();lines.remove(id);importantChats.remove(id);manager.cancel(id.toString(),2000)}
         val open = Intent(this,CanalActivity::class.java).setData(Uri.parse("canaldeck://chat/${m.chatId}"))

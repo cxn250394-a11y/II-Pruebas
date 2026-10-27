@@ -55,6 +55,20 @@ class TelegramSession private constructor(private val context: Context) {
     var visibleChat = 0L; private set
     var onMessage: ((Message) -> Unit)? = null
     var onRead: ((Long) -> Unit)? = null
+    var onPrivacyChange: ((Long) -> Unit)? = null
+    private val privacyFence = PrivacyFence()
+    fun privacyPending(chat: Long): Boolean = privacyFence.isPending(chat)
+    /** All asynchronous Chat writes go through the same generation check. */
+    private fun storeChat(chat: Chat, snapshot: Long, confirmsProtection: Boolean = false): Boolean {
+        val previousProtected = chats[chat.id]?.hasProtectedContent == true
+        if (chat.hasProtectedContent && privacyFence.observeProtected(chat.id, snapshot, previousProtected)) {
+            onPrivacyChange?.invoke(chat.id)
+            refreshChat(chat.id)
+            return false
+        }
+        if (chat.hasProtectedContent && !previousProtected) onPrivacyChange?.invoke(chat.id)
+        return privacyFence.store(chat.id, snapshot, chat.hasProtectedContent, chat, chats, confirmsProtection)
+    }
     private var configured = false
     private var refreshJob: Job? = null
     private val pendingChats = linkedSetOf<Long>()
@@ -72,13 +86,21 @@ class TelegramSession private constructor(private val context: Context) {
                     is UpdateConnectionState -> {
                         network = when (u.state) { is ConnectionStateReady -> "En línea"; is ConnectionStateWaitingForNetwork -> "Sin red"; is ConnectionStateUpdating -> "Sincronizando"; else -> "Reconectando" }; notifyUi()
                     }
-                    is UpdateNewChat -> { chats[u.chat.id] = u.chat; notifyUi() }
+                    is UpdateNewChat -> {
+                        storeChat(u.chat, privacyFence.snapshot())
+                        notifyUi()
+                    }
                     is UpdateNewMessage -> {
                         record(u.message); refreshChat(u.message.chatId)
                         if (ready) onMessage?.invoke(u.message)
                     }
                     is UpdateChatLastMessage -> refreshChat(u.chatId)
                     is UpdateChatTitle -> refreshChat(u.chatId)
+                    is UpdateChatHasProtectedContent -> {
+                        // Invalidate posted text immediately and keep new messages redacted
+                        // until a matching, fresh GetChat result confirms the change.
+                        privacyFence.changed(u.chatId, u.hasProtectedContent); onPrivacyChange?.invoke(u.chatId); refreshChat(u.chatId)
+                    }
                     is UpdateChatReadInbox -> { refreshChat(u.chatId); if (u.unreadCount == 0) onRead?.invoke(u.chatId) }
                     is UpdateChatReadOutbox -> refreshChat(u.chatId)
                     is UpdateMessageContent -> scope.launch {
@@ -162,7 +184,14 @@ class TelegramSession private constructor(private val context: Context) {
             val list: ChatList = if (archive) ChatListArchive() else ChatListMain()
             client.loadChats(chatList = list, limit = limit.coerceIn(1,1000))
             when (val r = client.getChats(chatList = list, limit = limit.coerceIn(1,1000))) {
-                is TdlResult.Success -> { for (id in r.result.chatIds) { val c = client.getChat(id); if (c is TdlResult.Success) chats[id] = c.result }; notifyUi() }
+                is TdlResult.Success -> {
+                    for (id in r.result.chatIds) {
+                        val snapshot = privacyFence.snapshot()
+                        val c = client.getChat(id)
+                        if (c is TdlResult.Success) storeChat(c.result, snapshot, confirmsProtection = true)
+                    }
+                    notifyUi()
+                }
                 is TdlResult.Failure -> failure(r)
             }
         }
@@ -175,7 +204,11 @@ class TelegramSession private constructor(private val context: Context) {
             delay(150)
             while (pendingChats.isNotEmpty()) {
                 val ids = pendingChats.toList(); pendingChats.clear()
-                for (chat in ids) { val r = client.getChat(chat); if (r is TdlResult.Success) chats[chat] = r.result }
+                for (chat in ids) {
+                    val snapshot = privacyFence.snapshot()
+                    val r = client.getChat(chat)
+                    if (r is TdlResult.Success) storeChat(r.result, snapshot, confirmsProtection = true)
+                }
                 notifyUi()
             }
         }
@@ -203,10 +236,15 @@ class TelegramSession private constructor(private val context: Context) {
             return
         }
         scope.launch {
+            val snapshot = privacyFence.snapshot()
             when(val result=client.searchPublicChat(username=username)) {
                 is TdlResult.Success -> {
                     val chat=result.result
-                    chats[chat.id]=chat
+                    if (!storeChat(chat, snapshot)) {
+                        refreshChat(chat.id)
+                        callback(null, "La privacidad de esta conversación cambió; vuelve a abrir el enlace.")
+                        return@launch
+                    }
                     notifyUi()
                     callback(chat.id,null)
                 }
@@ -262,7 +300,7 @@ class TelegramSession private constructor(private val context: Context) {
     fun logout() { if (!closing) scope.launch { val r = client.logOut(); if (r is TdlResult.Failure) failure(r) } }
     fun stop() {
         if (closing) return
-        closing = true; ready = false; onMessage = null; onRead = null; visibleChat = 0; status = "Desconectando"; notifyUi()
+        closing = true; ready = false; onMessage = null; onRead = null; onPrivacyChange = null; visibleChat = 0; status = "Desconectando"; notifyUi()
         scope.launch { client.close() }
     }
 }
