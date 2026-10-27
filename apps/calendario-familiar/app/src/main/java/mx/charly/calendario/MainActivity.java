@@ -210,6 +210,46 @@ public final class MainActivity extends Activity {
     private void gridInvalidateByDate(CalStore.MonthData data,LocalDate date,int color){
         View v=body.findViewWithTag("month-grid");if(v!=null)v.invalidate();
     }
+    /** Larger native view: 7 individual accessible day cards, unlike the small month grid. */
+    private void drawWeek(){
+        add(body,secondary("‹ Volver al mes",()->{
+            page="month";currentMonth=YearMonth.from(selected);render();
+        }),3);
+        LinearLayout nav=row();
+        weighted(nav,secondary("‹ Semana anterior",()->{selected=selected.minusWeeks(1);render();}),5);
+        weighted(nav,secondary("Semana siguiente ›",()->{selected=selected.plusWeeks(1);render();}),0);
+        add(body,nav,9);
+        add(body,label("Semana del "+dateTitle(WeekRules.sunday(selected)),19,true,INK),12);
+        add(body,label("Vista grande. Toca un día para ver o editar sus citas.",15,false,0xFF566374),3);
+        for(LocalDate date:WeekRules.days(selected)){
+            int dayColor=store.dayColor(profile,date.toString());
+            int ink=Palette.text(dayColor);
+            List<CalStore.Event> events=store.events(profile,date.toString());
+            LinearLayout dayCard=card(body,dayColor);
+            dayCard.setMinHeight(d(78));
+            dayCard.addView(label(dateTitle(date),21,true,ink));
+            if(events.isEmpty())dayCard.addView(label("Sin eventos",15,false,ink));
+            else for(CalStore.Event event:events){
+                LinearLayout tile=column();
+                tile.setPadding(d(13),d(8),d(13),d(8));
+                tile.setBackground(shape(event.color,11,0));
+                tile.setMinHeight(d(57));
+                tile.addView(label(WeekRules.eventLine(event),17,true,Palette.text(event.color)));
+                if(!event.note.isEmpty())
+                    tile.addView(label(event.note,14,false,Palette.text(event.color)));
+                add(dayCard,tile,6);
+            }
+            dayCard.addView(label("Toca para abrir este día",12,false,ink));
+            dayCard.setClickable(true);dayCard.setFocusable(true);
+            StringBuilder accessible=new StringBuilder(dateTitle(date));
+            for(CalStore.Event event:events)accessible.append(". ").append(WeekRules.eventLine(event));
+            dayCard.setContentDescription(accessible.toString()+". Abrir día.");
+            dayCard.setOnClickListener(v->{selected=date;page="day";render();});
+        }
+        add(body,secondary("Volver a la vista mensual",()->{
+            currentMonth=YearMonth.from(selected);page="month";render();
+        }),13);
+    }
     private void drawDay(){
         add(body,secondary("‹ Volver al mes",()->{page="month";currentMonth=YearMonth.from(selected);render();}),3);
         LinearLayout day=card(body,store.dayColor(profile,selected.toString()));
