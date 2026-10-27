@@ -1,5 +1,7 @@
 package mx.charly.kart
 
+import android.os.SystemClock
+
 import com.badlogic.gdx.*
 import com.badlogic.gdx.graphics.*
 import com.badlogic.gdx.graphics.g2d.*
@@ -77,7 +79,7 @@ class SandriftGame(private val autostart:Boolean=false, private val debugState:B
   // Only debuggable builds emit synthetic-test state; release builds expose no telemetry.
   if(debugState && System.nanoTime()-debugStateLastNs>=2_000_000_000L){
    debugStateLastNs=System.nanoTime()
-   Gdx.app.log("SandriftState", "SANDRIFT_STATE menu=$inMenu paused=$paused finished=${race.finished} elapsed=${race.elapsed}")
+   Gdx.app.log("SandriftState", "SANDRIFT_STATE boot_ms=${SystemClock.elapsedRealtime()} menu=$inMenu paused=$paused finished=${race.finished} elapsed=${race.elapsed}")
   }
   if(!inMenu&&!paused&&!race.finished){race.step(dt,steer,held("drift")||Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT),held("brake")||Gdx.input.isKeyPressed(Input.Keys.DOWN),
    (held("gas")||Gdx.input.isKeyPressed(Input.Keys.UP)||autostart));time+=dt}

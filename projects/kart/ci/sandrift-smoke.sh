@@ -10,6 +10,18 @@ fail(){ echo "FAIL $*" | tee -a "$R"; adb logcat -d > "$OUT/logcat-full.txt" || 
 alive(){ adb shell pidof "$PKG" >/dev/null 2>&1; }
 crashed(){ adb logcat -d -s AndroidRuntime:E | grep -q 'FATAL EXCEPTION'; }
 shot(){ adb exec-out screencap -p > "$OUT/$1.png"; }
+# /proc/uptime and Android elapsedRealtime share the device boot-time clock.
+device_uptime_ms(){ adb shell cat /proc/uptime | awk '{printf "%.0f", $1*1000}'; }
+# Record both window bounds before taking screenshots or evaluating logs.
+measure_window(){
+  local label="$1"
+  adb logcat -c
+  WINDOW_START="$(device_uptime_ms)"
+  sleep 7
+  WINDOW_END="$(device_uptime_ms)"
+  printf '%s %s\n' "$WINDOW_START" "$WINDOW_END" > "$OUT/$label-window-boot-ms.txt"
+  adb logcat -d -s SandriftState:I > "$OUT/$label-state-proof.txt" || true
+}
 size(){ adb exec-out screencap -p > "$OUT/.probe.png"; python3 -c "import struct;b=open('$OUT/.probe.png','rb').read();print(*struct.unpack('>II',b[16:24]))"; }
 vtap(){ read -r PX PY < <(size); read -r X Y < <(python3 -c "
 px,py,vx,vy=$PX,$PY,$1,$2
@@ -118,42 +130,37 @@ touch_screen 93 11
 # Allow any in-flight 5-second FPS log to be emitted before measuring silence.
 # A log timestamped right before PAUSA is not evidence that the race kept moving.
 sleep 2
-adb logcat -c
-sleep 7
+measure_window pause
 shot 05-paused
 alive && ! crashed || fail "pause-touch-crash"
 adb logcat -d -s SandriftPerf:I > "$OUT/pause-perf-proof.txt" || true
 if grep -q 'SANDRIFT_PERF' "$OUT/pause-perf-proof.txt"; then fail "pause-touch-did-not-stop-race"; fi
 pass "pause-touch-verified-by-no-race-telemetry"
-adb logcat -d -s SandriftState:I > "$OUT/pause-state-proof.txt" || true
-python3 "$STATE_ASSERT" "$OUT/pause-state-proof.txt" paused || fail "pause-state-not-observed"
+python3 "$STATE_ASSERT" "$OUT/pause-state-proof.txt" paused "$WINDOW_START" "$WINDOW_END" || fail "pause-state-not-observed"
 pass "pause-state-live-and-clock-stopped"
 touch_screen 50 42
 # Measure after the input has completed and the render loop has settled.
 # The full seven-second window still requires live running state and advancing time.
 sleep 2
-adb logcat -c
-sleep 7
+measure_window resume
 shot 05b-resumed
 alive && ! crashed || fail "resume-touch-crash"
 adb logcat -d -s SandriftPerf:I > "$OUT/resume-perf-proof.txt" || true
 grep -q 'SANDRIFT_PERF' "$OUT/resume-perf-proof.txt" &&
   pass "resume-touch-verified-by-race-telemetry" || fail "resume-touch-did-not-restart-race"
-adb logcat -d -s SandriftState:I > "$OUT/resume-state-proof.txt" || true
-python3 "$STATE_ASSERT" "$OUT/resume-state-proof.txt" running || fail "resume-state-not-observed"
+python3 "$STATE_ASSERT" "$OUT/resume-state-proof.txt" running "$WINDOW_START" "$WINDOW_END" || fail "resume-state-not-observed"
 pass "resume-state-live-and-clock-advancing"
 
 # BACK remains a separate, clearly recorded gate; no false green attribution.
 adb shell input keyevent 4
 sleep 2
-adb logcat -c
-sleep 7
+measure_window back
 adb logcat -d -s SandriftPerf:I > "$OUT/back-button-diagnostic.txt" || true
-adb logcat -d -s SandriftState:I > "$OUT/back-state-proof.txt" || true
 if grep -q 'SANDRIFT_PERF' "$OUT/back-button-diagnostic.txt"; then
+  python3 "$STATE_ASSERT" "$OUT/back-state-proof.txt" running "$WINDOW_START" "$WINDOW_END" || fail "back-running-without-live-state"
   echo "KNOWN_ISSUE P2-BACK: BACK did not pause; on-screen pause is the certified path." | tee -a "$R"
 else
-  python3 "$STATE_ASSERT" "$OUT/back-state-proof.txt" paused || fail "back-silent-without-verified-pause"
+  python3 "$STATE_ASSERT" "$OUT/back-state-proof.txt" paused "$WINDOW_START" "$WINDOW_END" || fail "back-silent-without-verified-pause"
   pass "physical-back-key-paused"
   touch_screen 50 42
   sleep 2
