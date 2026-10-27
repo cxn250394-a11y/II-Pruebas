@@ -71,6 +71,8 @@ grep -q 'Semana anterior' calendario-evidence/week.xml
 grep -q 'Semana siguiente' calendario-evidence/week.xml
 grep -q 'Vista grande' calendario-evidence/week.xml
 adb exec-out screencap -p > calendario-evidence/week.png
+# Build the fixture through native UI, force-stop/restart, and verify UI + SQLite.
+python3 apps/calendario-familiar/ci/real_fixture.py
 adb logcat -d -s AndroidRuntime:E > calendario-evidence/crashes.txt
 if grep -q 'FATAL EXCEPTION' calendario-evidence/crashes.txt; then cat calendario-evidence/crashes.txt; exit 1; fi
-echo 'PASS: install, cold start, rotation with calendar visible, and navigation to week. Not tested physically on POCO, with TalkBack, or for midnight launcher cache.' > calendario-evidence/SUMMARY.txt
+echo 'PASS: install, cold start, rotation, native synthetic appointment and painted day, week/day display, and persistence after force-stop/restart. Not tested physically on POCO, with TalkBack, or for midnight launcher cache.' > calendario-evidence/SUMMARY.txt
