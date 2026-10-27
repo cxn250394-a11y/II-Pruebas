@@ -20,8 +20,18 @@ public final class WeekRules {
     }
     public static String eventLine(CalStore.Event e) {
         if(e==null)throw new IllegalArgumentException("Evento requerido");
-        String category=e.shortName.isEmpty()?"":e.shortName+" · ";
+        String category=e.categoryName.isEmpty()?"":e.categoryName+" · ";
         String hour=e.time.isEmpty()?"":e.time+" · ";
         return hour+category+e.title;
+    }
+    /** Complete spoken description, including the note hidden by a grouped card's label. */
+    public static String accessibleDay(String date, List<CalStore.Event> events) {
+        StringBuilder text=new StringBuilder(date);
+        if(events.isEmpty())text.append(". Sin eventos");
+        for(CalStore.Event event:events){
+            text.append(". ").append(eventLine(event));
+            if(!event.note.isEmpty())text.append(". Nota: ").append(event.note);
+        }
+        return text.append(". Abrir día.").toString();
     }
 }

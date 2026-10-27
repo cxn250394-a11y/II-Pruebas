@@ -244,9 +244,7 @@ public final class MainActivity extends Activity {
             }
             dayCard.addView(label("Toca para abrir este día",12,false,ink));
             dayCard.setClickable(true);dayCard.setFocusable(true);
-            StringBuilder accessible=new StringBuilder(dateTitle(date));
-            for(CalStore.Event event:events)accessible.append(". ").append(WeekRules.eventLine(event));
-            dayCard.setContentDescription(accessible.toString()+". Abrir día.");
+            dayCard.setContentDescription(WeekRules.accessibleDay(dateTitle(date),events));
             dayCard.setOnClickListener(v->{selected=date;page="day";render();});
         }
         add(body,secondary("Volver a la vista mensual",()->{

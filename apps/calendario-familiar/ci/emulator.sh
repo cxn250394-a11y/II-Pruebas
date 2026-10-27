@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 mkdir -p calendario-evidence
+# Preserve evidence when a foreground assertion fails; a live PID alone does not
+# prove that the app is the visible activity.
+diagnose_failure() {
+  local status=$?
+  if (( status != 0 )); then
+    adb shell dumpsys activity activities > calendario-evidence/activity-on-failure.txt 2>&1 || true
+    adb logcat -d -v threadtime > calendario-evidence/logcat-on-failure.txt 2>&1 || true
+    adb exec-out screencap -p > calendario-evidence/screen-on-failure.png 2>/dev/null || true
+  fi
+}
+trap diagnose_failure EXIT
 APK="calendario-delivery/Calendario-Familiar-Terra-v0.2-beta.apk"
 adb install -r "$APK" > calendario-evidence/install.txt
 grep -q 'Success' calendario-evidence/install.txt

@@ -25,6 +25,7 @@ public final class WeekAccessibilityTest {
         context=RuntimeEnvironment.getApplication();
         context.deleteDatabase("calendario-familiar.db");
         context.getSharedPreferences("ui",Context.MODE_PRIVATE).edit().clear().commit();
+        context.getSharedPreferences("MainActivity",Context.MODE_PRIVATE).edit().clear().commit();
     }
     @Test public void startOfWeekIsSundayEvenAcrossYear(){
         assertEquals(LocalDate.parse("2025-12-28"),WeekRules.sunday(LocalDate.parse("2026-01-01")));
@@ -44,7 +45,36 @@ public final class WeekAccessibilityTest {
     }
     @Test public void eventLineIncludesActualTextAndTime(){
         CalStore.Event e=new CalStore.Event(1,1,"2026-10-27","Consulta de seguimiento","09:30","Notas",Palette.COLORS[1],"ISSSTE Balbuena","ISSSTE");
-        assertEquals("09:30 · ISSSTE · Consulta de seguimiento",WeekRules.eventLine(e));
+        assertEquals("09:30 · ISSSTE Balbuena · Consulta de seguimiento",WeekRules.eventLine(e));
+    }
+    @Test public void accessibleWeekCardIncludesFullCategoryNoteAndOpensTheDay(){
+        String today=LocalDate.now().toString();
+        try(CalStore db=new CalStore(context)){
+            long category=db.saveCategory(1,0,"Hospital Central Completo","Hospital",Palette.COLORS[1]);
+            db.saveEvent(1,0,today,"Consulta de prueba","09:30","Llevar estudios",category);
+        }
+        var ctl=Robolectric.buildActivity(MainActivity.class).create();
+        try{
+            View root=ctl.get().getWindow().getDecorView();
+            TextView button=find(root,"Ver semana");
+            assertNotNull(button);button.performClick();
+            View week=ctl.get().getWindow().getDecorView();
+            TextView event=find(week,"Hospital Central Completo");
+            assertNotNull(event);
+            View card=(View)event.getParent().getParent();
+            String description=card.getContentDescription().toString();
+            assertTrue(description.contains("09:30"));
+            assertTrue(description.contains("Hospital Central Completo"));
+            assertTrue(description.contains("Consulta de prueba"));
+            assertTrue(description.contains("Nota: Llevar estudios"));
+            assertTrue(card.isClickable());
+            card.performClick();
+            assertNotNull(find(ctl.get().getWindow().getDecorView(),"Eventos de este día"));
+            assertNotNull(find(ctl.get().getWindow().getDecorView(),"Consulta de prueba"));
+        }finally{ctl.destroy();}
+    }
+    @Test public void emptyDayDescriptionDoesNotOmitEmptyState(){
+        assertEquals("lunes. Sin eventos. Abrir día.",WeekRules.accessibleDay("lunes",List.of()));
     }
     @Test public void eventLineWithoutCategoryOrTimeIsPlainTitle(){
         CalStore.Event e=new CalStore.Event(1,0,"2026-10-27","Trabajo","","",Palette.COLORS[3],"","");
