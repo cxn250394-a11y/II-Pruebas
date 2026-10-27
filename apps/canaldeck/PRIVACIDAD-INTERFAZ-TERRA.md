@@ -1,0 +1,17 @@
+# Protección de interfaz · avance de laboratorio
+
+Base del avance: carril de avisos Terra sobre PR #15, sin cuentas ni conversaciones reales. Este cambio trata como protegido un chat desconocido, pendiente de confirmación, secreto o protegido, y una vista que contiene mensajes no guardables o de autodestrucción. Las ventanas de diálogos ya abiertas se protegen cuando cambia la privacidad; no se retira esa protección del diálogo existente. Al pasar a segundo plano se protege la actividad antes de la captura de Recientes.
+
+OCR local exige mensaje guardable y metadatos conocidos y permitidos al abrir el medio, al iniciar el OCR y al recibir el resultado. Si la protección cambia, se bloquea el botón disponible y se descarta el resultado tardío. Una publicación recuperada por enlace se examina antes de mostrar su diálogo. Al cambiar de cuenta se invalidan historial, respuestas, ventanas y consultas pendientes; las búsquedas y enlaces también verifican la sesión de origen.
+
+La selección de archivo del respaldo queda asociada a la sesión y cuenta que la inició; si cambian se cancela la operación. Si la actividad es destruida mientras está abierto el selector, la clave no se conserva y se avisa que debe iniciarse de nuevo; el selector podría haber creado un archivo vacío que debe revisarse.
+
+Las confirmaciones de organización, avisos y ajustes se validan contra la instancia y la cuenta con que se abrieron. Si se pierde la sesión o cambia su instancia —incluso con el mismo ID—, se bloquea y reemplaza la vista previa. Una prueba del predicado simula reemplazo en segundo plano; todavía no sustituye un cambio de sesión real en Android.
+
+Las filas conservan la instancia que produjo los datos; las acciones verifican también la instancia propietaria de la vista. `onNewIntent` reconcilia identidad antes de consumir el chat y los borradores solo se conservan bajo la sesión que abrió la vista. La confirmación anidada de enlaces verifica de nuevo la cuenta de origen. Estos guards se probaron con datos sintéticos y reflexión, no con dos sesiones reales.
+
+Como regla conservadora, tras observar un mensaje restringido en un chat se mantienen deshabilitadas capturas y OCR para ese chat durante la sesión, aunque más tarde se muestren mensajes individuales permitidos. No es una prueba de cómo se comportan todos los clientes o dispositivos Android. Si se cambian las condiciones mientras el proceso está suspendido o terminado, aún se necesitan pruebas de ciclo de vida en dispositivo y de diálogos ya visibles. No se valida captura de medios protegidos, OCR real ni restricciones de un canal real en este laboratorio; no se usan cuentas ni datos privados.
+
+Riesgo pendiente: al sustituir la vista de cuenta, Android puede retirar `FLAG_SECURE` antes de comprobar que el compositor presentó el primer fotograma de la vista nueva. Probar esa transición y el selector de respaldo en dispositivo antes de declarar resuelta la privacidad de la interfaz. El APK de prueba usa firma debug distinta de otras ejecuciones; no desinstalar ni asumir migración de datos.
+
+Tests unitarios puros cubren la política de datos desconocidos, pendientes, protegidos, secretos, no guardables y autodestrucción. Tests Robolectric previstos cubren una ventana ya abierta y la protección de historial sin sesión y en segundo plano; resultados Android, Lint, APK y emulador deben declararse por separado para el commit exacto.

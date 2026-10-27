@@ -36,6 +36,8 @@ class CanalActivity : Screen() {
     private var activeChat = 0L
     private var history = emptyList<Message>()
     private var rows = emptyList<ChatRow>()
+    private var rowsOwner: TelegramSession? = null
+    private var rowsAccount = 0L
     private var statusLabel: TextView? = null
     private var countLabel: TextView? = null
     private var chatsList: ListView? = null
@@ -49,21 +51,39 @@ class CanalActivity : Screen() {
     private var historyTicket = 0
     private var searchHistory = false
     private var foreground = false
+    private var transitioningAccount = false
     private var observed: TelegramSession? = null
     private var lastAuthType = ""
     private var lastAccount = 0L
+    private var lastSession: TelegramSession? = null
     private val handler = Handler(Looper.getMainLooper())
     private val drafts = mutableMapOf<Pair<Long,Long>,String>()
     private var mediaPlayer: MediaPlayer? = null
     private var mediaDialog: AlertDialog? = null
     private var protectedMedia = false
     private var backupPassword: CharArray? = null
+    private var backupSession: TelegramSession? = null
+    private var backupAccountId = 0L
     private var backupMode = ""
     private val exportCode = 551
     private val importCode = 552
     private val uiChange = Runnable { refreshState() }
     private val readVisible = Runnable { acknowledgeVisible() }
-    private val changed: () -> Unit = { handler.removeCallbacks(uiChange); handler.postDelayed(uiChange,120) }
+    private val changed: () -> Unit = {
+        val s = TelegramSession.current
+        if (foreground && lastAccount != 0L && !BackupSessionGuard.matches(lastSession,lastAccount,s,s?.accountId ?: 0L,s?.ready == true)) refreshState()
+        else { handler.removeCallbacks(uiChange); handler.postDelayed(uiChange,120) }
+    }
+    private val privacyChanged: (Long) -> Unit = { id ->
+        if (foreground && (screen == "list" || (screen == "history" && activeChat == id))) {
+            // A protection change must lock visible windows synchronously, not
+            // wait for the delayed ordinary UI refresh.
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            allowDialogScreenshots = false
+            protectOpenDialogs()
+            mediaDialog?.getButton(AlertDialog.BUTTON_NEUTRAL)?.isEnabled = false
+        }
+    }
     private val messagesChanged: (Long) -> Unit = { id ->
         if (foreground && screen == "history" && activeChat == id && !searchHistory) {
             val s=TelegramSession.current
@@ -73,50 +93,75 @@ class CanalActivity : Screen() {
     private val org: Organization get() = Organization(this,TelegramSession.current?.accountId ?: 0)
 
     override fun onCreate(state: Bundle?) { super.onCreate(state);home() }
-    override fun onResume() { super.onResume();foreground=true;observe();if(screen=="history")TelegramSession.current?.showChat(activeChat);refreshState();consumeIntent(intent) }
+    override fun onResume() { super.onResume();foreground=true;observe();refreshState();if(screen=="history")TelegramSession.current?.showChat(activeChat);consumeIntent(intent) }
     override fun onPause() {
+        // Lock before the activity becomes a background snapshot. A later
+        // onResume re-evaluates the current account and privacy metadata.
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE); allowDialogScreenshots=false; protectOpenDialogs()
         foreground=false;saveDraft();handler.removeCallbacks(readVisible);observed?.showChat(0)
-        observed?.observers?.remove(changed);observed?.messageObservers?.remove(messagesChanged);observed=null
+        observed?.observers?.remove(changed);observed?.messageObservers?.remove(messagesChanged);observed?.privacyObservers?.remove(privacyChanged);observed=null
         mediaDialog?.dismiss();mediaDialog=null;mediaPlayer?.release();mediaPlayer=null
         super.onPause()
     }
-    override fun onDestroy() { handler.removeCallbacksAndMessages(null);super.onDestroy() }
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent);setIntent(intent);consumeIntent(intent) }
+    override fun onDestroy() { backupPassword?.fill(0.toChar());backupPassword=null;backupSession=null;backupAccountId=0L;handler.removeCallbacksAndMessages(null);super.onDestroy() }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent);setIntent(intent);if(foreground){refreshState();consumeIntent(intent)} }
     @Deprecated("Native Activity compatibility")
     override fun onBackPressed() { if(screen=="history")chats();else if(screen!="home")home();else super.onBackPressed() }
     private fun consumeIntent(i: Intent) {
+        if (!foreground) return
         val id=i.getLongExtra("chat",0)
         val s=TelegramSession.current
         if(id!=0L && s?.ready==true){i.removeExtra("chat");if(id in s.chats){demo=false;openChat(id)}else toast("Esta conversación todavía no está cargada")}
     }
     private fun observe() {
         val s=TelegramSession.current
-        if(observed!==s){observed?.observers?.remove(changed);observed?.messageObservers?.remove(messagesChanged);observed=s;s?.observers?.add(changed);s?.messageObservers?.add(messagesChanged)}
+        if(observed!==s){observed?.observers?.remove(changed);observed?.messageObservers?.remove(messagesChanged);observed?.privacyObservers?.remove(privacyChanged);observed=s;s?.observers?.add(changed);s?.messageObservers?.add(messagesChanged);s?.privacyObservers?.add(privacyChanged)}
     }
     private fun refreshState() {
         if(isDestroyed||!foreground)return
-        observe();secure()
+        observe()
         val s=TelegramSession.current
+        if (lastAccount != 0L && !BackupSessionGuard.matches(lastSession,lastAccount,s,s?.accountId ?: 0L,s?.ready == true)) resetAccountView()
+        if(s?.ready==true && lastAccount!=s.accountId){ lastAccount=s.accountId;lastSession=s;folder="*";query="";drafts.clear() }
+        secure()
         statusLabel?.text=if(s==null)ConnectionService.lastError ?: "Desconectado" else if(s.ready) "${s.accountName} · ${s.network}" else s.status
         authButton?.isEnabled=s?.authBusy!=true
-        if(s?.ready==true && lastAccount!=s.accountId){lastAccount=s.accountId;folder="*";query="";drafts.clear()}
         when(screen){
             "login" -> if(s?.ready==true)chats() else if(lastAuthType!=s?.state?.javaClass?.simpleName.orEmpty())login()
             "list" -> refreshChats()
             "history" -> if(s?.ready!=true){history=emptyList();drafts.clear();home()}
         }
     }
+    private fun resetAccountView() {
+        transitioningAccount=true
+        try {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE); allowDialogScreenshots=false; protectOpenDialogs(); dismissOpenDialogs()
+            historyTicket++; history=emptyList(); reply=null; composer=null; activeChat=0; searchHistory=false; rows=emptyList();rowsOwner=null;rowsAccount=0L
+            lastAccount=0L;lastSession=null;folder="*";query="";drafts.clear(); home()
+        } finally { transitioningAccount=false }
+    }
+    private fun withAccount(origin: TelegramSession?, account: Long, action: () -> Unit) {
+        if (AccountActionGuard.matches(origin,lastSession,account,TelegramSession.current,origin?.accountId ?: 0L,origin?.ready == true) && lastAccount == account) action()
+        else { toast("La cuenta cambió. Abre de nuevo esta opción."); if (foreground) refreshState() }
+    }
     private fun secure() {
         val current = TelegramSession.current
         val chat=current?.chats?.get(activeChat)
-        val protectedChat=screen=="history" && (chat?.hasProtectedContent==true || chat?.type is ChatTypeSecret)
-        val sensitive=screen=="credentials" || screen=="login" || protectedMedia || protectedChat
-        val allow= !sensitive && (demo || current==null || org.screenshots)
+        val protectedChat=screen=="history" && !demo && (!UiPrivacy.safeChat(chat != null,
+            current?.privacyPending(activeChat) != false, chat?.hasProtectedContent == true, chat?.type is ChatTypeSecret) ||
+            current?.sawRestrictedMessage(activeChat) == true || history.any { !it.canBeSaved || it.selfDestructType != null })
+        val protectedList=screen=="list" && !demo && (current == null || current.chats.values.any { c ->
+            !UiPrivacy.safeChat(true, current.privacyPending(c.id), c.hasProtectedContent, c.type is ChatTypeSecret) ||
+                current.sawRestrictedMessage(c.id) || c.lastMessage?.let { !it.canBeSaved || it.selfDestructType != null } == true
+        })
+        val sensitive=screen=="credentials" || screen=="login" || protectedMedia || protectedChat || protectedList
+        val allow= foreground && !transitioningAccount && !sensitive && (demo || current==null || org.screenshots)
         allowDialogScreenshots=allow
         if(allow) window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        else window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else { window.addFlags(WindowManager.LayoutParams.FLAG_SECURE); protectOpenDialogs() }
     }
-    private fun saveDraft(){val c=composer;if(screen=="history"&&c!=null)drafts[(TelegramSession.current?.accountId?:0) to activeChat]=c.text.toString()}
+    private fun saveDraft(){val c=composer;val s=TelegramSession.current
+        if(screen=="history"&&c!=null&&AccountActionGuard.matches(s,lastSession,lastAccount,s,s?.accountId ?: 0L,s?.ready == true))drafts[lastAccount to activeChat]=c.text.toString()}
     private fun page(name:String,title:String,subtitle:String){
         saveDraft();if(screen=="history"&&name!="history")TelegramSession.current?.showChat(0)
         screen=name;statusLabel=null;countLabel=null;chatsList=null;messagesList=null;composer=null;authButton=null
@@ -231,7 +276,9 @@ class CanalActivity : Screen() {
     }
     private fun refreshChats(){
         if(screen!="list"||chatsList==null)return
-        val all=if(demo)sampleRows()else TelegramSession.current?.chats?.values.orEmpty().map{c->
+        val source=TelegramSession.current
+        rowsOwner=if(demo)null else source;rowsAccount=if(demo)0L else source?.accountId ?: 0L
+        val all=if(demo)sampleRows()else source?.chats?.values.orEmpty().map{c->
             val type=when(val t=c.type){is ChatTypeSupergroup->if(t.isChannel)"channel"else"group";is ChatTypeBasicGroup->"group";else->"private"}
             ChatRow(c.id,c.title,TelegramSession.preview(c.lastMessage?.content),c.lastMessage?.date?.toLong()?:0,c.unreadCount,type,org.favorite(c.id),org.folder(c.id),org.important(c.id))
         }
@@ -244,96 +291,105 @@ class CanalActivity : Screen() {
         override fun getItem(p:Int)=rows[p]
         override fun getItemId(p:Int)=rows[p].id
         override fun getView(p:Int,recycled:View?,parent:ViewGroup?):View{
-            val c=rows[p];val box=column().apply{setPadding(dp(15),dp(10),dp(15),dp(10));background=GradientDrawable().apply{setColor(Color.rgb(23,36,53));cornerRadius=dp(16).toFloat()}}
+            val c=rows[p];val source=rowsOwner;val account=rowsAccount
+            val box=column().apply{setPadding(dp(15),dp(10),dp(15),dp(10));background=GradientDrawable().apply{setColor(Color.rgb(23,36,53));cornerRadius=dp(16).toFloat()}}
             box.addView(text((if(c.important)"●  " else "")+(if(c.favorite)"★  " else "")+c.title,17f,Color.WHITE,true).apply{maxLines=1;ellipsize=TextUtils.TruncateAt.END})
             box.addView(text(c.preview.ifBlank{"Sin mensaje reciente"},13f,soft).apply{maxLines=2;ellipsize=TextUtils.TruncateAt.END})
             box.addView(text("${when(c.kind){"channel"->"CANAL";"group"->"GRUPO";else->"PRIVADO"}}  ·  ${c.unread} no leídos${if(c.important)" · PRIORIDAD"else""}",11f,if(c.important||c.unread>0)accent else soft))
-            box.isFocusable=true;box.setOnClickListener{if(demo)toast("Este es un ejemplo. Conecta tu cuenta para abrir mensajes reales.")else openChat(c.id)}
-            box.setOnLongClickListener{if(demo)toast("Las acciones reales se activan al conectar tu cuenta")else organize(c.id);true};return box
+            box.isFocusable=true;box.setOnClickListener{if(demo)toast("Este es un ejemplo. Conecta tu cuenta para abrir mensajes reales.")else withAccount(source,account){openChat(c.id)}}
+            box.setOnLongClickListener{if(demo)toast("Las acciones reales se activan al conectar tu cuenta")else withAccount(source,account){organize(c.id)};true};return box
         }
     }
     private fun folders(){
         page("folders","Tus carpetas","Organización local · no cambia las carpetas de Telegram")
-        if(demo||TelegramSession.current?.ready!=true){label("Conecta tu cuenta para crear carpetas reales.");button("Volver"){if(demo)chats()else home()};return}
-        button("+ Crear carpeta",true){prompt("Nombre de carpeta"){name->if(org.createFolder(name)==null)toast("Usa un nombre único de 1 a 40 caracteres")else folders()}}
+        val source = TelegramSession.current; val account = source?.accountId ?: 0L
+        if(demo||source?.ready!=true){label("Conecta tu cuenta para crear carpetas reales.");button("Volver"){if(demo)chats()else home()};return}
+        button("+ Crear carpeta",true){withAccount(source,account){prompt("Nombre de carpeta"){name->withAccount(source,account){if(org.createFolder(name)==null)toast("Usa un nombre único de 1 a 40 caracteres")else folders()}}}}
         org.folders().forEach{(id,name)->
             val count=TelegramSession.current?.chats?.keys?.count{org.folder(it)==id}?:0
-            card(name,"$count conversaciones cargadas"){folder=id;kind="all";chats()}
-            button("Orden y opciones · $name"){dialog().setItems(arrayOf("↑ Subir", "↓ Bajar", "Cambiar nombre", "Eliminar carpeta")){_,choice->
+            card(name,"$count conversaciones cargadas"){withAccount(source,account){folder=id;kind="all";chats()}}
+            button("Orden y opciones · $name"){withAccount(source,account){dialog().setItems(arrayOf("↑ Subir", "↓ Bajar", "Cambiar nombre", "Eliminar carpeta")){_,choice->withAccount(source,account){
                 when(choice) {
                     0 -> { if(!org.moveFolder(id,-1))toast("Ya es la primera carpeta");folders() }
                     1 -> { if(!org.moveFolder(id,1))toast("Ya es la última carpeta");folders() }
-                    2 -> prompt("Nuevo nombre"){n->if(org.renameFolder(id,n))folders()else toast("Nombre duplicado o inválido")}
-                    else -> confirm("Eliminar carpeta","Solo elimina esta carpeta local; no borra chats, mensajes ni favoritos."){org.deleteFolder(id);if(folder==id)folder="*";folders()}
+                    2 -> prompt("Nuevo nombre"){n->withAccount(source,account){if(org.renameFolder(id,n))folders()else toast("Nombre duplicado o inválido")}}
+                    else -> confirm("Eliminar carpeta","Solo elimina esta carpeta local; no borra chats, mensajes ni favoritos."){withAccount(source,account){org.deleteFolder(id);if(folder==id)folder="*";folders()}}
                 }
-            }.show()}
+            }}.show()}}
         }
         label("Para mover un canal: mantén pulsada su tarjeta → Carpeta. Puedes poner nombres como Trabajo, Música o Deportes.",13f,soft);nav()
     }
     private fun organize(id:Long){
-        if(TelegramSession.current?.ready!=true)return
+        val source=TelegramSession.current ?: return;val account=source.accountId
+        if(!source.ready)return
         dialog().setTitle(TelegramSession.current?.chats?.get(id)?.title ?: "Organizar")
             .setItems(arrayOf(if(org.favorite(id))"Quitar favorito"else"Marcar favorito",
                 if(org.important(id))"Quitar prioridad"else"Prioridad: arriba y aviso destacado",
-                "Mover a carpeta","Configurar avisos de este chat")){_,i->when(i){
+                "Mover a carpeta","Configurar avisos de este chat")){_,i->withAccount(source,account){when(i){
                 0->{org.toggleFavorite(id);refreshChats()}
                 1->{org.toggleImportant(id);ConnectionService.current?.clear(id);refreshChats()}
-                2->{val fs=listOf("" to "Sin carpeta")+org.folders();dialog().setTitle("Carpeta local").setItems(fs.map{it.second}.toTypedArray()){_,n->org.assign(id,fs[n].first);refreshChats()}.setNegativeButton("Cancelar",null).show()}
+                2->{val fs=listOf("" to "Sin carpeta")+org.folders();dialog().setTitle("Carpeta local").setItems(fs.map{it.second}.toTypedArray()){_,n->withAccount(source,account){org.assign(id,fs[n].first);refreshChats()}}.setNegativeButton("Cancelar",null).show()}
                 else->noticeSettings(id)
-            }}.show()
+            }}}.show()
     }
     private fun noticeSettings(id:Long){
+        val source=TelegramSession.current ?: return;val account=source.accountId
+        if(!source.ready)return
         val box=column().apply{setPadding(dp(20),0,dp(20),0)}
         val choices=RadioGroup(this);val names=listOf("Apagados","Cada publicación nueva","Solo si contiene mis palabras")
         names.forEachIndexed{i,s->choices.addView(RadioButton(this).apply{this.id=200+i;text=s;setTextColor(Color.WHITE)})};choices.check(200+org.mode(id).ordinal);box.addView(choices)
         val words=EditText(this).apply{hint="Palabras separadas por comas";setText(org.words(id));setTextColor(Color.WHITE);setHintTextColor(soft)};box.addView(words)
         box.addView(text("Son avisos de CanalDeck, separados de Telegram/Nicegram. Dependen de que esta conexión siga activa.",12f,soft))
         dialog().setTitle("Avisos de la conversación").setView(box).setNegativeButton("Cancelar",null)
-            .setPositiveButton("Guardar"){_,_->
+            .setPositiveButton("Guardar"){_,_->withAccount(source,account){
                 val mode=NoticeMode.entries.getOrElse(choices.checkedRadioButtonId-200){NoticeMode.OFF}
                 org.mode(id,mode);org.words(id,words.text.toString());ConnectionService.current?.clear(id)
                 if(mode!=NoticeMode.OFF&&Build.VERSION.SDK_INT>=33)requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),9)
                 toast("Preferencias guardadas")
-            }.setNeutralButton("Sonido Android"){_,_->
+            }}.setNeutralButton("Sonido Android"){_,_->withAccount(source,account){
                 val i=Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName).putExtra(Settings.EXTRA_CHANNEL_ID,ConnectionService.channel(id,org.important(id)))
                 try{startActivity(i)}catch(_:Exception){toast("El canal de Android aparece después de su primer aviso")}
-            }.show()
+            }}.show()
     }
     private fun settings(){
         page("settings","Ajustes","Tu sesión y tu privacidad")
         val s=TelegramSession.current
         statusLabel=label(s?.let{if(it.ready)"${it.accountName} · ${it.network}"else it.status} ?: "Sin conexión",15f,accent)
         if(s?.ready==true&&!demo){
+            val account=s.accountId
             label("Notificaciones de CanalDeck",18f)
             val age=org.lastLocalNoticeAgeMillis()
             val timing=if(age==null)"Sin observaciones recientes" else "Último aviso solicitado: ${age/1000} s desde la fecha del mensaje · medición local aproximada"
             label("Diagnóstico: $timing. No mide cuándo Android mostró el banner ni garantiza puntualidad.",12f,soft)
-            body.addView(Switch(this).apply{text="Mostrar texto en los avisos";setTextColor(Color.WHITE);isChecked=org.previews;minHeight=dp(48);setOnCheckedChangeListener{_,v->org.previews=v;ConnectionService.current?.clearAll()}})
-            body.addView(Switch(this).apply{text="Horario silencioso";setTextColor(Color.WHITE);isChecked=org.quietEnabled;minHeight=dp(48);setOnCheckedChangeListener{_,v->org.quietEnabled=v}})
+            body.addView(Switch(this).apply{text="Mostrar texto en los avisos";setTextColor(Color.WHITE);isChecked=org.previews;minHeight=dp(48);setOnCheckedChangeListener{_,v->withAccount(s,account){org.previews=v;ConnectionService.current?.clearAll()}}})
+            body.addView(Switch(this).apply{text="Horario silencioso";setTextColor(Color.WHITE);isChecked=org.quietEnabled;minHeight=dp(48);setOnCheckedChangeListener{_,v->withAccount(s,account){org.quietEnabled=v}}})
             fun time(n:Int)=String.format(Locale.ROOT,"%02d:%02d",n/60,n%60)
             val start=field("Desde HH:mm",time(org.quietStart()));val end=field("Hasta HH:mm",time(org.quietEnd()))
-            button("Guardar horario"){if(org.hours(start.text.toString(),end.text.toString()))toast("Horario guardado")else toast("Usa HH:mm válido y horas diferentes")}
-            button("Cargar también conversaciones archivadas"){s.refresh(1000,true);toast("Se solicitó el archivo. Revisa Chats.")}
-            button("Borrar los avisos actuales de CanalDeck"){ConnectionService.current?.clearAll()}
+            button("Guardar horario"){withAccount(s,account){if(org.hours(start.text.toString(),end.text.toString()))toast("Horario guardado")else toast("Usa HH:mm válido y horas diferentes")}}
+            button("Cargar también conversaciones archivadas"){withAccount(s,account){s.refresh(1000,true);toast("Se solicitó el archivo. Revisa Chats.")}}
+            button("Borrar los avisos actuales de CanalDeck"){withAccount(s,account){ConnectionService.current?.clearAll()}}
         }
         if(s?.ready==true&&!demo){
+            val account=s.accountId
             label("Favoritos y carpetas · conservar entre APK",18f)
-            button("Guardar respaldo cifrado"){prepareBackup(true)}
-            button("Restaurar respaldo de esta cuenta"){prepareBackup(false)}
+            button("Guardar respaldo cifrado"){withAccount(s,account){prepareBackup(true)}}
+            button("Restaurar respaldo de esta cuenta"){withAccount(s,account){prepareBackup(false)}}
             label("Puedes respaldar favoritos, prioridades, carpetas, su orden y reglas de aviso. La clave debe tener 12+ caracteres y NO se guarda. No incluye chats, archivos, sesiones ni credenciales.",12f,soft)
         }
         button("Permisos y notificaciones de Android"){try{startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName))}catch(_:Exception){toast("Revisa CanalDeck en Ajustes de Android")}}
         label("Mantén pulsado un chat → Prioridad para verlo arriba; puedes filtrar solo prioritarios. Prioridad NO activa avisos apagados. Los avisos normales y prioritarios usan grupos Android separados; el sistema puede seguir agrupándolos.",13f,soft)
         label("Para activar un canal: mantén pulsado el chat → Configurar avisos. Todos empiezan apagados. La vista previa está oculta de fábrica.",13f,soft)
         card("Conexión visible, no garantía de entrega instantánea","No hay Firebase/FCM configurado. Esta beta usa una conexión visible en segundo plano; HyperOS puede cerrarla o retrasarla. No reemplaza todavía las alertas del cliente oficial.")
-        if(s!=null){button("Desconectar CanalDeck"){stopService(Intent(this,ConnectionService::class.java));home()};button("Cerrar únicamente esta sesión"){confirm("Cerrar sesión","Cierra CanalDeck en Telegram; no cierra Telegram oficial ni Nicegram. Tus carpetas locales siguen separadas por cuenta."){drafts.clear();ConnectionService.current?.clearAll();s.logout();home()}}}
+        if(s!=null){val account=s.accountId;button("Desconectar CanalDeck"){if(TelegramSession.current===s){stopService(Intent(this,ConnectionService::class.java));home()}else toast("La conexión cambió; abre de nuevo Ajustes.")};button("Cerrar únicamente esta sesión"){withAccount(s,account){confirm("Cerrar sesión","Cierra CanalDeck en Telegram; no cierra Telegram oficial ni Nicegram. Tus carpetas locales siguen separadas por cuenta."){withAccount(s,account){drafts.clear();ConnectionService.current?.clearAll();s.logout();home()}}}}}
         else button("Conectar mi cuenta",true){demo=false;connect()}
         button("Ayuda de activación"){guide()}
         button("Licencias y alcance"){dialog().setTitle("CanalDeck Personal 0.3.1 beta").setMessage("Cliente independiente, no afiliado a Nicegram ni Telegram. TDLib: Boost 1.0. TDL Coroutines y Kotlin Coroutines: Apache 2.0. Licencias incluidas en assets. Una cuenta. Sin llamadas, chats secretos, exportación de contenido protegido ni pagos. La beta usa firma de prueba y no ha validado tu cuenta real.").setPositiveButton("Cerrar",null).show()}
         nav()
     }
     private fun prepareBackup(exporting: Boolean) {
-        if(TelegramSession.current?.ready!=true || demo)return
+        val sourceSession=TelegramSession.current ?: return
+        val sourceAccount=sourceSession.accountId
+        if(!sourceSession.ready || sourceAccount==0L || demo)return
         val password=EditText(this).apply {
             hint="Clave de respaldo (12+ caracteres)"
             inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -347,7 +403,11 @@ class CanalActivity : Screen() {
                 val chars=password.text.toString().toCharArray();password.text.clear()
                 if(chars.size<12){chars.fill(0.toChar());toast("La clave necesita 12 caracteres o más")}
                 else {
+                    if(!BackupSessionGuard.matches(sourceSession,sourceAccount,TelegramSession.current,sourceSession.accountId,sourceSession.ready)) {
+                        chars.fill(0.toChar());toast("La cuenta cambió. Inicia de nuevo el respaldo.");return@setPositiveButton
+                    }
                     backupPassword?.fill(0.toChar());backupPassword=chars
+                    backupSession=sourceSession;backupAccountId=sourceAccount
                     try {
                         val intent=Intent(if(exporting)Intent.ACTION_CREATE_DOCUMENT else Intent.ACTION_OPEN_DOCUMENT).apply {
                             addCategory(Intent.CATEGORY_OPENABLE);type="application/octet-stream"
@@ -355,7 +415,7 @@ class CanalActivity : Screen() {
                         }
                         @Suppress("DEPRECATION")
                         startActivityForResult(intent,if(exporting)exportCode else importCode)
-                    }catch(_:Exception){backupPassword?.fill(0.toChar());backupPassword=null;toast("No se pudo abrir el selector de archivos")}
+                    }catch(_:Exception){backupPassword?.fill(0.toChar());backupPassword=null;backupSession=null;backupAccountId=0L;toast("No se pudo abrir el selector de archivos")}
                 }
                 secure()
             }.show()
@@ -365,9 +425,16 @@ class CanalActivity : Screen() {
         super.onActivityResult(requestCode,resultCode,data)
         if(requestCode!=exportCode&&requestCode!=importCode)return
         val password=backupPassword;backupPassword=null
+        val sourceSession=backupSession;backupSession=null
+        val sourceAccount=backupAccountId;backupAccountId=0L
         try {
-            if(resultCode!=RESULT_OK || data?.data==null || password==null)return
-            require(TelegramSession.current?.ready==true)
+            if(resultCode!=RESULT_OK || data?.data==null)return
+            if(password==null || sourceSession==null) {
+                toast("Se interrumpió el respaldo. Inícialo de nuevo y revisa si se creó un archivo vacío.");return
+            }
+            if(!BackupSessionGuard.matches(sourceSession,sourceAccount,TelegramSession.current,sourceSession.accountId,sourceSession.ready)) {
+                toast("La cuenta cambió. No se procesó el respaldo; inicia de nuevo.");return
+            }
             val uri=requireNotNull(data.data)
             if(requestCode==exportCode) {
                 val bytes=OrganizationBackup.encrypt(org.exportOrganization().toByteArray(Charsets.UTF_8),password)
@@ -397,7 +464,7 @@ class CanalActivity : Screen() {
     }
     private fun openChat(id:Long){
         val s=TelegramSession.current ?: return
-        if(!s.ready)return
+        if(!AccountActionGuard.matches(s,lastSession,lastAccount,s,s.accountId,s.ready))return
         saveDraft();composer=null
         activeChat=id;history=emptyList();reply=null;searchHistory=false;historyTicket++;historyLayout();s.showChat(id);loadHistory()
     }
@@ -406,7 +473,13 @@ class CanalActivity : Screen() {
         linearPage("history",chat?.title ?: "Conversación","Lectura real de Telegram · los mensajes visibles se marcan leídos")
         val tools=row()
         fun tool(name:String,action:()->Unit){tools.addView(Button(this).apply{text=name;isAllCaps=false;textSize=12f;setOnClickListener{action()}},LinearLayout.LayoutParams(0,-2,1f))}
-        tool("‹ Chats"){chats()};tool("Organizar"){organize(activeChat)};tool("Buscar"){prompt("Buscar en esta conversación"){q->if(q.isNotBlank()){searchHistory=true;val id=activeChat;val ticket=++historyTicket;TelegramSession.current?.searchMessages(id,q){m,e->if(!isDestroyed&&screen=="history"&&id==activeChat&&ticket==historyTicket){history=m.orEmpty().sortedBy{it.id};historyError?.text=e ?: "Resultados de búsqueda: ${history.size}";refreshMessages()}}}}}
+        tool("‹ Chats"){chats()};tool("Organizar"){organize(activeChat)};tool("Buscar"){prompt("Buscar en esta conversación"){q->if(q.isNotBlank()){
+            val session=TelegramSession.current ?: return@prompt
+            searchHistory=true;val id=activeChat;val ticket=++historyTicket
+            session.searchMessages(id,q){m,e->if(!isDestroyed&&screen=="history"&&id==activeChat&&ticket==historyTicket&&TelegramSession.current===session){
+                history=m.orEmpty().sortedBy{it.id};historyError?.text=e ?: "Resultados de búsqueda: ${history.size}";refreshMessages()
+            }}
+        }}}
         body.addView(tools)
         historyError=label("Cargando mensajes…",12f,accent)
         button("Cargar anteriores / salir de búsqueda"){if(searchHistory){searchHistory=false;history=emptyList();loadHistory()}else loadHistory(older=true)}
@@ -435,7 +508,7 @@ class CanalActivity : Screen() {
             if(older&&firstId!=null)messagesList?.setSelection(history.indexOfFirst{it.id==firstId}.coerceAtLeast(0))else if(!older)messagesList?.setSelection((history.size-1).coerceAtLeast(0))
         }
     }
-    private fun refreshMessages(){if(screen!="history"||messagesList==null)return;messageAdapter.notifyDataSetChanged();scheduleRead()}
+    private fun refreshMessages(){if(screen!="history"||messagesList==null)return;secure();messageAdapter.notifyDataSetChanged();scheduleRead()}
     private fun scheduleRead(){handler.removeCallbacks(readVisible);handler.postDelayed(readVisible,500)}
     private fun acknowledgeVisible(){
         if(!foreground||screen!="history"||!hasWindowFocus())return
@@ -457,6 +530,7 @@ class CanalActivity : Screen() {
     }
     private fun send(){
         val s=TelegramSession.current?:return;val field=composer?:return;val value=field.text.toString()
+        if (!AccountActionGuard.matches(s,lastSession,lastAccount,s,s.accountId,s.ready) || screen != "history") { toast("La cuenta cambió. Vuelve a abrir la conversación.");return }
         if(!DeckRules.validMessage(value)){toast("Escribe entre 1 y 4,096 caracteres");return}
         val id=activeChat;val replyTo=reply;sendButton?.isEnabled=false
         s.sendText(id,value,replyTo){message,error->
@@ -471,6 +545,8 @@ class CanalActivity : Screen() {
         }
     }
     private fun messageActions(m:Message){
+        val source=TelegramSession.current ?: return;val account=source.accountId
+        if (!AccountActionGuard.matches(source,lastSession,lastAccount,source,account,source.ready)) {toast("La cuenta cambió. Vuelve a abrir la conversación.");return}
         val actions=mutableListOf("Ver texto completo")
         if(composer!=null)actions.add("Responder con texto")
         if(m.content is MessagePhoto)actions.add("Ver foto")
@@ -478,12 +554,12 @@ class CanalActivity : Screen() {
         if(m.content is MessageAudio || m.content is MessageVoiceNote)actions.add("Reproducir audio")
         val links=Regex("https?://[^\\s<>]+",RegexOption.IGNORE_CASE).findAll(TelegramSession.preview(m.content)).map{it.value}.take(5).toList()
         if(links.isNotEmpty())actions.add("Abrir enlace")
-        dialog().setTitle("Mensaje").setItems(actions.toTypedArray()){_,n->when(actions[n]){
+        dialog().setTitle("Mensaje").setItems(actions.toTypedArray()){_,n->withAccount(source,account){when(actions[n]){
             "Ver texto completo"->{val t=text(TelegramSession.preview(m.content),15f).apply{setPadding(dp(18),dp(12),dp(18),dp(12))};dialog().setView(ScrollView(this).apply{addView(t)}).setPositiveButton("Cerrar",null).show()}
             "Responder con texto"->{reply=m;replyLabel?.text="Respuesta: ${TelegramSession.preview(m.content).take(80)} · tocar para quitar";composer?.requestFocus()}
-            "Abrir enlace"->dialog().setTitle("Abrir enlace").setItems(links.toTypedArray()){_,i->openTelegramLink(links[i])}.show()
+            "Abrir enlace"->dialog().setTitle("Abrir enlace").setItems(links.toTypedArray()){_,i->withAccount(source,account){openTelegramLink(links[i])}}.show()
             else->playMedia(m)
-        }}.show()
+        }}}.show()
     }
     private fun openTelegramLink(link:String) {
         val parsed=MessageLinks.parsePublic(link)
@@ -496,11 +572,11 @@ class CanalActivity : Screen() {
                 demo=false;openChat(chatId)
                 val message=parsed.messageId
                 if(message!=null)session.fetchLinkedMessage(chatId,message){m->
-                    if(!isDestroyed&&foreground&&screen=="history"&&activeChat==chatId){
+                    if(!isDestroyed&&foreground&&screen=="history"&&activeChat==chatId&&TelegramSession.current===session){
                         if(m==null)toast("Conversación abierta. Esa publicación no está disponible.")
-                        else dialog().setTitle("Publicación dentro de CanalDeck")
+                        else { session.observeMessagePrivacy(m); secure(); dialog().setTitle("Publicación dentro de CanalDeck")
                             .setMessage(TelegramSession.preview(m.content).take(9000))
-                            .setPositiveButton("Cerrar",null).show()
+                            .setPositiveButton("Cerrar",null).show() }
                     }
                 }
             }
@@ -518,23 +594,33 @@ class CanalActivity : Screen() {
         val cap=if(c is MessageVideo)80_000_000L else 20_000_000L
         if(file.size>cap||file.expectedSize>cap){toast("Este archivo supera el límite de descarga de la beta");return}
         val id=activeChat;val s=TelegramSession.current?:return
+        if (!AccountActionGuard.matches(s,lastSession,lastAccount,s,s.accountId,s.ready) || screen != "history") {toast("La cuenta cambió. Vuelve a abrir la conversación.");return}
         confirm("Descargar y abrir","Se descargará este archivo a la carpeta privada de CanalDeck. Límite: ${cap/1_000_000} MB. Puede consumir datos móviles."){
+            if (!AccountActionGuard.matches(s,lastSession,lastAccount,TelegramSession.current,s.accountId,s.ready)) {toast("La cuenta cambió. Vuelve a abrir el contenido.");return@confirm}
             toast("Descargando archivo…")
-            s.media(file.id,cap){path->if(!isDestroyed&&foreground&&TelegramSession.current===s&&activeChat==id){if(path==null)toast("La descarga no se completó o excede el límite")else displayMedia(path,c is MessagePhoto,c is MessageVideo,m.canBeSaved && s.chats[id]?.hasProtectedContent != true)}}
+            s.media(file.id,cap){path->if(!isDestroyed&&foreground&&TelegramSession.current===s&&activeChat==id){if(path==null)toast("La descarga no se completó o excede el límite")else displayMedia(path,c is MessagePhoto,c is MessageVideo){safeMedia(s,id,m)}}}
         }
     }
-    private fun displayMedia(path:String,photo:Boolean,video:Boolean,canAnalyze:Boolean){
+    private fun safeMedia(session: TelegramSession, id: Long, message: Message): Boolean {
+        val chat = session.chats[id]
+        return foreground && screen == "history" && activeChat == id && TelegramSession.current === session && !session.sawRestrictedMessage(id) &&
+            UiPrivacy.safeMedia(chat != null, session.privacyPending(id), chat?.hasProtectedContent == true,
+                chat?.type is ChatTypeSecret, message.canBeSaved, message.selfDestructType != null)
+    }
+    private fun displayMedia(path:String,photo:Boolean,video:Boolean,canAnalyzeNow:()->Boolean){
         try{
             val f=java.io.File(path);require(f.canonicalPath.startsWith(filesDir.canonicalPath+"/")&&f.isFile)
             mediaDialog?.dismiss()
+            val canAnalyze = canAnalyzeNow()
             protectedMedia = !canAnalyze
             secure()
             if(photo){val opt=android.graphics.BitmapFactory.Options().apply{inJustDecodeBounds=true};android.graphics.BitmapFactory.decodeFile(path,opt);require(opt.outWidth>0&&opt.outHeight>0);var sample=1;while(opt.outWidth/sample>1600||opt.outHeight/sample>1600)sample*=2;opt.inJustDecodeBounds=false;opt.inSampleSize=sample
                 val bmp=android.graphics.BitmapFactory.decodeFile(path,opt)?:error("Invalid photo");val image=ImageView(this).apply{adjustViewBounds=true;setImageBitmap(bmp)}
                 val builder=dialog().setTitle("Foto del canal").setView(image).setPositiveButton("Cerrar",null)
                 if(canAnalyze)builder.setNeutralButton("Leer apuesta (OCR local)"){_,_->
+                    if (!canAnalyzeNow()) { toast("El contenido ya no está disponible para OCR."); return@setNeutralButton }
                     LocalBetText.read(bmp){recognized,error->
-                        if(isDestroyed||!foreground)return@read
+                        if(isDestroyed||!foreground||!canAnalyzeNow())return@read
                         if(recognized.isNullOrBlank()){
                             info("Análisis de imagen",error ?: "No se reconoció texto legible");return@read
                         }
