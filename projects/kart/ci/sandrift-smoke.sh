@@ -3,6 +3,7 @@
 # Emulator numbers come from a software-rendered x86_64 AVD and say nothing about the POCO F7.
 set -euo pipefail
 APK="$1"; OUT="${2:-sandrift-evidence}"; PKG=mx.charly.kart; ACT="$PKG/.KartActivity"
+STATE_ASSERT="$(dirname "$0")/assert-state.py"
 mkdir -p "$OUT"; R="$OUT/RESULTS.txt"; : > "$R"
 pass(){ echo "PASS $*" | tee -a "$R"; }
 fail(){ echo "FAIL $*" | tee -a "$R"; adb logcat -d > "$OUT/logcat-full.txt" || true; exit 1; }
@@ -124,23 +125,35 @@ alive && ! crashed || fail "pause-touch-crash"
 adb logcat -d -s SandriftPerf:I > "$OUT/pause-perf-proof.txt" || true
 if grep -q 'SANDRIFT_PERF' "$OUT/pause-perf-proof.txt"; then fail "pause-touch-did-not-stop-race"; fi
 pass "pause-touch-verified-by-no-race-telemetry"
-adb logcat -c
+adb logcat -d -s SandriftState:I > "$OUT/pause-state-proof.txt" || true
+python3 "$STATE_ASSERT" "$OUT/pause-state-proof.txt" paused || fail "pause-state-not-observed"
+pass "pause-state-live-and-clock-stopped"
 touch_screen 50 42
+# Measure after the input has completed and the render loop has settled.
+# The full seven-second window still requires live running state and advancing time.
+sleep 2
+adb logcat -c
 sleep 7
 shot 05b-resumed
 alive && ! crashed || fail "resume-touch-crash"
 adb logcat -d -s SandriftPerf:I > "$OUT/resume-perf-proof.txt" || true
 grep -q 'SANDRIFT_PERF' "$OUT/resume-perf-proof.txt" &&
   pass "resume-touch-verified-by-race-telemetry" || fail "resume-touch-did-not-restart-race"
+adb logcat -d -s SandriftState:I > "$OUT/resume-state-proof.txt" || true
+python3 "$STATE_ASSERT" "$OUT/resume-state-proof.txt" running || fail "resume-state-not-observed"
+pass "resume-state-live-and-clock-advancing"
 
 # BACK remains a separate, clearly recorded gate; no false green attribution.
-adb logcat -c
 adb shell input keyevent 4
+sleep 2
+adb logcat -c
 sleep 7
 adb logcat -d -s SandriftPerf:I > "$OUT/back-button-diagnostic.txt" || true
+adb logcat -d -s SandriftState:I > "$OUT/back-state-proof.txt" || true
 if grep -q 'SANDRIFT_PERF' "$OUT/back-button-diagnostic.txt"; then
   echo "KNOWN_ISSUE P2-BACK: BACK did not pause; on-screen pause is the certified path." | tee -a "$R"
 else
+  python3 "$STATE_ASSERT" "$OUT/back-state-proof.txt" paused || fail "back-silent-without-verified-pause"
   pass "physical-back-key-paused"
   touch_screen 50 42
   sleep 2
