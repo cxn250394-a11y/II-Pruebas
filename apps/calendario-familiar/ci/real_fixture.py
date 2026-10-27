@@ -8,6 +8,7 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from ui_guard import guard
 
 PKG = 'mx.charly.calendario.terra'
 OUT = Path('calendario-evidence')
@@ -27,8 +28,10 @@ def dump(name):
     counter += 1
     adb('shell', 'uiautomator', 'dump', '/sdcard/cal-fixture.xml')
     data = adb('exec-out', 'cat', '/sdcard/cal-fixture.xml').stdout
-    (OUT / f'fixture-{counter:02d}-{name}.xml').write_bytes(data)
-    return ET.fromstring(data)
+    path = OUT / f'fixture-{counter:02d}-{name}.xml'
+    path.write_bytes(data)
+    guard(path)
+    return ET.parse(path).getroot()
 
 
 def bounds(node):
