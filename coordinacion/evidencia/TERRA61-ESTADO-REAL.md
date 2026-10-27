@@ -1,6 +1,6 @@
 # F0 independiente — inventario parcial verificable (27-oct-2026)
 
-Repositorio `cxn250394-a11y/II-Pruebas`, público. Fuente: API GitHub PRs y ejecuciones de Actions consultadas sobre SHA exacto; lectura de README, manifiesto, workflow y lista de cambios de cada línea. No se ha ejecutado código ni descargado/reportado como inspeccionados los APK o reportes de estas líneas. Los nombres de los tests en los workflows describen lo configurado; los trabajos reportan su conclusión, no prueban cada funcionalidad o uso real. Main consultado directamente mediante fetch_commit(main) y compare contra `12cc1c7ea0d2717190ac9a2eed2a0bd9bc4ed4e1`: idéntico, 0 commits de diferencia al momento de consulta. Repetir al cierre de la ejecución completa.
+Repositorio `cxn250394-a11y/II-Pruebas`, público. Fuente: API GitHub PRs y ejecuciones de Actions consultadas sobre SHA exacto; lectura de README, manifiesto, workflow y lista de cambios de cada línea. No se ha ejecutado código de estas líneas; los ZIP de APK y reportes de firma fueron descargados y revisados según la sección posterior. Los nombres de los tests en los workflows describen lo configurado; los trabajos reportan su conclusión, no prueban cada funcionalidad o uso real. Main consultado directamente mediante fetch_commit(main) y compare contra `12cc1c7ea0d2717190ac9a2eed2a0bd9bc4ed4e1`: idéntico, 0 commits de diferencia al momento de consulta. Repetir al cierre de la ejecución completa.
 
 | Producto | PR / HEAD actual consultado | Ejecuciones encontradas en ese HEAD | Evaluación y próximo gate |
 |---|---|---|---|
@@ -38,3 +38,46 @@ P1 transversal: los workflows producen APK debug y verifican certificados; no se
 ## Alcance incompleto del F0
 
 El conector de runs consultado devuelve solo ejecuciones asociadas al commit y solo la primera página de triggers PR: cuando aparece una sola, **no se dispone de la segunda ejecución histórica de la línea**; no confundir dos workflows sobre el mismo HEAD con los dos últimos runs históricos. Faltan lectura detallada de diffs y logs/reportes de todos los jobs, inspección de certificados/APK internos ; se confirmó main actual pero se debe repetir al final. No se asignan P0 sin evidencia; prioridades P1/P2 arriba reflejan riesgos pendientes, no defectos reproducidos. Este inventario es PARCIAL_RECUPERABLE, no dictamen independiente de aptitud.
+
+## Comparaciones de alcance por SHA (API compare)
+
+- LAB vs main: 26 archivos, todos añadidos, en `apps/centro-alertas-lab`, `shared/alerts-core`, scripts, docs/evidence y workflow; no cambios a archivos preexistentes.
+- Canal #15 vs `6500123fe912ab913c80f6f79839934c2ab04c9e`: 16 archivos, en `apps/canaldeck/**` y su workflow. Cinco commits por delante.
+- Audio vs alfa `98cff714738cbff71f67a3b4eac24dc7fe597ac5`: ocho rutas, audio + workflow + una línea añadida en `projects/build.gradle`.
+- Stats vs alfa: siete rutas, stats + workflow + una línea añadida en `projects/build.gradle`.
+- Alfa Odds/#3 vs main: 47 rutas añadidas de cinco productos, lógica y UI compartidas y workflow; no es un diff exclusivo de Odds.
+- Kart #19 vs alfa: 14 rutas en kart, lógica de carrera y workflow. #20 (`1c40a4ad`) vs productor `f6118bf9`: exactamente un archivo modificado, `projects/kart/ci/sandrift-smoke.sh`, 88 adiciones / 11 eliminaciones. Afirmación solo de alcance, no de corrección.
+- Calendario #22 vs main: 50 archivos todos añadidos, únicamente `apps/calendario-familiar/**` y workflow.
+
+Estas cifras son inspección de metadatos de diffs, no auditoría de cada línea de código. Los riesgos funcionales listados antes siguen pendientes de pruebas.
+
+## Segundo run anterior encontrado mediante primer padre
+
+El conector consulta runs asociados a commit con filtro de triggers PR, no ofrece listado cronológico por rama. Se resolvió `HEAD~1` vía API y se consultó ese SHA; cuando no devolvió runs se consultaron los siguientes ancestros de la misma rama hasta la base. Por tanto no se garantiza la ausencia de ejecuciones `push`/manuales ni otros historiales fuera de la primera página.
+
+| Línea | Run previo encontrado al exacto del HEAD, SHA | Resultado |
+|---|---|---|
+| LAB | [39632187869](https://github.com/cxn250394-a11y/II-Pruebas/actions/runs/39632187869), `a4fae8465141bb5d889205a68f6dd73ea841395b` | FAIL tarea `:app:testDebugUnitTest`, causa concreta no aislada en esta inspección. |
+| Canal Personal | Ancestros `0bc6094e`, `7492b5dc`, `cec3d8d0`, `8c53fdb4`: sin runs PR en API | Sin segundo run de esta rama disponible; base #14 es otro HEAD/PR, no heredar. |
+| Audio | [40020576799](https://github.com/cxn250394-a11y/II-Pruebas/actions/runs/40020576799), `6cd7ff910ee4d87cf6862e3ca0c62a1aa616b44a` | build OK, emulador FAIL `/usr/bin/sh: Illegal option -o pipefail`. Five Products 40020576480 cancelado. |
+| Stats | [40024581943](https://github.com/cxn250394-a11y/II-Pruebas/actions/runs/40024581943), `588ab8ce0de51d18a255873d55b37ee61ae93897` | build OK, emulador FAIL mismo error de shell; Five Products 40024581720 cancelado. |
+| Odds / alfa | [39682778247](https://github.com/cxn250394-a11y/II-Pruebas/actions/runs/39682778247), `0e11bf2ee6f71946156bdbb186a568106a289f49` | build FAIL en `:audio:lintDebug`, emulador omitido; no implica fallo de Odds. |
+| Kart #19 | Ancestros `d6abe6ee`, `34b072cb`, `fc2cd236`: sin runs PR en API | Sin segundo run de rama disponible; no sustituir por #20. |
+| Kart QA #20 | [40036035578](https://github.com/cxn250394-a11y/II-Pruebas/actions/runs/40036035578), `7a3f07cadb8e99f8d5bf0e37867f3a86fe4203f8` | build OK, emulador FAIL entrada a carrera; HEAD actual también emulador FAIL pausa. |
+| Calendario | [40139247332](https://github.com/cxn250394-a11y/II-Pruebas/actions/runs/40139247332), `08d9c4471032a57811ff4c8f3c789641d1f34a62` | build FAIL compilación de tests `cannot find symbol`, emulador omitido; corregido en HEAD posterior que sí reporta éxito. |
+
+## Certificados y hash internos de artefactos disponibles
+
+Se descargaron los siete ZIP de artefactos y su SHA-256 coincide con el digest de la API GitHub; se calculó localmente SHA-256 de cada APK y se leyó `SOURCE-COMMIT.txt` y el reporte `apksigner` de CI dentro del ZIP. No hay `apksigner` instalado localmente, por lo que la validación criptográfica es **la registrada en CI, no una verificación criptográfica repetida localmente**. En todos los reportes se indica certificado Android Debug, un firmante y verificación v2. Los SHA de certificado son huellas públicas, no claves.
+
+| Línea / artefacto | SHA-256 APK interna | SHA-256 certificado de reporte CI |
+|---|---|---|
+| LAB #1 / 12360498101 | `7cd3c306f0107ecf612356f36d28ae1cb9e69de25897cd5ee1410c191741ae30` | `9d6e6a5f87e0be2ebf1f5f5b3f6278752d767547c74f8d8ca1e50d32de196424` |
+| Canal #15 / 12528913815 | `3ee2ed1753757bfec15ea8c0ffed1d8938aa6a75285e582c81823bb6b32206e6` | `9e6ad914413d809a80524fab1db11d90146f469307274d7571945672284836dd` |
+| Audio #16 / 12529734513 | `0c8ef7cd04fc9961c8691f3b9eaf803d8a65ab315876c17be9a4f5d4d5d351be` | `4a242ac87b6e1808eed03e2248587fe88fb584990e87c6e77c6540e939379d78` |
+| Stats #18 / 12532422627 | `5b285ab75dc5f54f692008a10ff645e49abe9591f6be531477a56c259beffd3f` | `3702621449bd411b18117da1e50afe759fdc8d983eb86d89a263a3f8cd38f2b7` |
+| Odds alfa #3 / 12386205662 | `36b008032504b04184a72c994b116b7eb31d985ab47ee782c671c3feab09f62d` | `3c2e0009abc9051095bc7e4b110b2445f022edb007f89858ec1e771fd166c3eb` |
+| Kart #19 / 12537075490 | `42ce97952fd1d8df8924304d8c5d0c4c67a887398a9ea20519e74d6e0df26d01` | `63d2d2b24c108fd219e6ce3431f2a3e47c8553186b85a9cf3629c77a00173222` |
+| Calendario #22 / 12577984960 | `c4731cdfc2e6210f16ef860f766fb1338ca9090a374f3af29cad1324bdbb9885` | `dd6c57cad6c2f310376a919100f941e4454ad8626cccc27f3f77580c4cc7aaea` |
+
+Los `SOURCE-COMMIT.txt` de cada paquete corresponden a los HEAD listados en tabla inicial. Por ejemplo, alfa #3 y sus APK de Audio/Stats/Kart comparten certificado `3c2e...c3eb`, mientras los artefactos posteriores de esas líneas tienen certificados diferentes; ello impide asumir actualización directa incluso si applicationId coincide. La sola coincidencia de huella de certificado tampoco sustituye comprobar aplicación ID, versión y una actualización con datos en el dispositivo.
