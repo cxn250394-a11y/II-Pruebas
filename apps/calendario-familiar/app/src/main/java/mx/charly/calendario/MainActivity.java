@@ -55,10 +55,13 @@ public final class MainActivity extends Activity {
             currentMonth=YearMonth.parse(state.getString("month",YearMonth.now().toString()));
             selected=LocalDate.parse(state.getString("selected",LocalDate.now().toString()));
         }
-        DateIcon.refresh(this);
+        DateIcon.scheduleOnly(this);
         render();
     }
-    @Override protected void onResume(){super.onResume();DateIcon.refresh(this);}
+    @Override protected void onResume(){super.onResume();DateIcon.scheduleOnly(this);}
+    // Changing the launcher alias during Activity startup can return Android to HOME.
+    // Only switch aliases once this Activity is leaving the foreground.
+    @Override protected void onPause(){super.onPause();DateIcon.refresh(getApplicationContext());}
     @Override protected void onDestroy(){if(backupPassword!=null)Arrays.fill(backupPassword,'\0');if(store!=null)store.close();super.onDestroy();}
     @Override protected void onSaveInstanceState(Bundle out){
         out.putInt("profile",profile);out.putString("page",page);
