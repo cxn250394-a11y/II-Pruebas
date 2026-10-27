@@ -1,4 +1,4 @@
-name: Calendario Familiar v0.1 | APK y pruebas
+name: Calendario Familiar Terra v0.2 | APK y pruebas
 on:
   pull_request:
     paths:
@@ -64,14 +64,14 @@ jobs:
       - name: APK signature and provenance
         run: |
           mkdir -p ../../calendario-delivery
-          cp app/build/outputs/apk/debug/app-debug.apk ../../calendario-delivery/Calendario-Familiar-v0.1-beta.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs ../../calendario-delivery/Calendario-Familiar-v0.1-beta.apk > ../../calendario-delivery/APK-VERIFY.txt
+          cp app/build/outputs/apk/debug/app-debug.apk ../../calendario-delivery/Calendario-Familiar-Terra-v0.2-beta.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs ../../calendario-delivery/Calendario-Familiar-Terra-v0.2-beta.apk > ../../calendario-delivery/APK-VERIFY.txt
           cd ../../calendario-delivery
-          sha256sum Calendario-Familiar-v0.1-beta.apk > SHA256SUMS.txt
+          sha256sum Calendario-Familiar-Terra-v0.2-beta.apk > SHA256SUMS.txt
           git -C .. rev-parse HEAD > SOURCE-COMMIT.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Calendario-Familiar-v0.1-apk
+          name: Calendario-Familiar-Terra-v0.2-apk
           path: calendario-delivery/
           if-no-files-found: error
           retention-days: 14
@@ -79,7 +79,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Calendario-Familiar-v0.1-tests
+          name: Calendario-Familiar-Terra-v0.2-tests
           path: |
             apps/calendario-familiar/build-calendario.log
             apps/calendario-familiar/app/build/test-results/testDebugUnitTest/*.xml
@@ -101,7 +101,7 @@ jobs:
           java-version: '17'
       - uses: actions/download-artifact@v4
         with:
-          name: Calendario-Familiar-v0.1-apk
+          name: Calendario-Familiar-Terra-v0.2-apk
           path: calendario-delivery
       - name: Enable KVM
         run: |
@@ -121,7 +121,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Calendario-Familiar-v0.1-emulator
+          name: Calendario-Familiar-Terra-v0.2-emulator
           path: calendario-evidence/
           if-no-files-found: warn
           retention-days: 14
