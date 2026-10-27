@@ -47,6 +47,14 @@ def find(root, predicate):
     return [node for node in root.iter() if predicate(node)]
 
 
+def find_button(root, text):
+    # Android's themed dialog buttons may render all caps even when the
+    # application supplies mixed case. Keep both the label and type exact.
+    return find(root, lambda n: n.get('class') == 'android.widget.Button'
+                and n.get('clickable') == 'true'
+                and n.get('text', '').casefold() == text.casefold())
+
+
 def tap_text(text, *, exact=False, scroll=False):
     for attempt in range(5 if scroll else 1):
         root = dump('find')
@@ -160,7 +168,10 @@ def main():
     field('Ej. Consulta', TITLE)
     field('Hora opcional', '09:30')
     field('Detalles importantes', NOTE)
-    tap_text('Guardar', exact=True)
+    root = dump('save-button')
+    buttons = find_button(root, 'Guardar')
+    assert len(buttons) == 1, f'Expected exactly one Save dialog button: {len(buttons)}'
+    tap_node(buttons[0])
     reveal_text(TITLE)
     capture('fixture-day-saved.png')
     # Restart the process, not just the screen, before checking persistence.
