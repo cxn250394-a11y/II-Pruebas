@@ -158,7 +158,7 @@ measure_window back
 adb logcat -d -s SandriftPerf:I > "$OUT/back-button-diagnostic.txt" || true
 if grep -q 'SANDRIFT_PERF' "$OUT/back-button-diagnostic.txt"; then
   python3 "$STATE_ASSERT" "$OUT/back-state-proof.txt" running "$WINDOW_START" "$WINDOW_END" || fail "back-running-without-live-state"
-  echo "KNOWN_ISSUE P2-BACK: BACK did not pause; on-screen pause is the certified path." | tee -a "$R"
+  echo "KNOWN_ISSUE P2-BACK: BACK did not pause; on-screen pause tested separately." | tee -a "$R"
 else
   python3 "$STATE_ASSERT" "$OUT/back-state-proof.txt" paused "$WINDOW_START" "$WINDOW_END" || fail "back-silent-without-verified-pause"
   pass "physical-back-key-paused"
