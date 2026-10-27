@@ -43,6 +43,8 @@ public final class DateIcon {
         }
         schedule(context);
     }
+    /** Schedule next update without disabling the active launcher entry during startup. */
+    public static void scheduleOnly(Context context){schedule(context.getApplicationContext());}
     private static void schedule(Context context){
         try{
             AlarmManager alarms=(AlarmManager)context.getSystemService(Context.ALARM_SERVICE);
