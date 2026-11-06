@@ -93,11 +93,27 @@ def tap_text(text, *, exact=False, scroll=False):
 def reveal_text(text):
     for attempt in range(5):
         root = dump('reveal')
-        if find(root, lambda n: text in n.get('text', '') or text in n.get('content-desc', '')):
-            return root
+        scrolls = find(root, lambda n: n.get('class') == 'android.widget.ScrollView'
+                       and n.get('package') == PKG)
+        viewports = []
+        for scroll in scrolls:
+            rect = list(map(int, re.findall(r'\d+', scroll.get('bounds', ''))))
+            if len(rect) == 4 and rect[2] > rect[0] and rect[3] > rect[1]:
+                viewports.append(rect)
+        labels = find(root, lambda n: n.get('class') == 'android.widget.TextView'
+                      and text in n.get('text', ''))
+        for label in labels:
+            rect = list(map(int, re.findall(r'\d+', label.get('bounds', ''))))
+            if len(rect) != 4 or rect[3]-rect[1] < 16:
+                continue
+            # UI Automator clips a partially visible label's bounds. A label
+            # touching a viewport edge is not evidence that its text is readable.
+            if any(rect[0] >= x1 and rect[2] <= x2 and rect[1] > y1+8
+                   and rect[3] < y2-8 for x1,y1,x2,y2 in viewports):
+                return root
         if attempt < 4:
             scroll_content(root)
-    raise AssertionError(f'No visible UI content after scrolling: {text}')
+    raise AssertionError(f'No fully visible UI text after scrolling: {text}')
 
 
 def capture(name):
