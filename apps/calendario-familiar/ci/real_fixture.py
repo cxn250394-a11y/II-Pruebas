@@ -58,31 +58,62 @@ def find_button(root, text):
                 and n.get('text', '').casefold() == text.casefold())
 
 
+def scroll_content(root):
+    candidates = find(root, lambda n: n.get('class') == 'android.widget.ScrollView'
+                      and n.get('package') == PKG)
+    rectangles = []
+    for node in candidates:
+        xy = list(map(int, re.findall(r'\d+', node.get('bounds', ''))))
+        if len(xy) == 4 and xy[2] > xy[0] and xy[3] > xy[1]:
+            rectangles.append(xy)
+    assert rectangles, 'No visible content ScrollView'
+    x1, y1, x2, y2 = max(rectangles, key=lambda r: (r[2]-r[0])*(r[3]-r[1]))
+    x = (x1+x2)//2
+    adb('shell', 'input', 'swipe', str(x), str(y1+(y2-y1)*4//5),
+        str(x), str(y1+(y2-y1)//4), '500')
+    time.sleep(1)
+
+
 def tap_text(text, *, exact=False, scroll=False):
     for attempt in range(5 if scroll else 1):
         root = dump('find')
         def matches(node):
             values = (node.get('text', ''), node.get('content-desc', ''))
             return any(v == text if exact else text in v for v in values)
-        nodes = find(root, matches)
+        nodes = find(root, lambda n: n.get('clickable') == 'true' and n.get('package') == PKG and matches(n))
         if nodes:
+            assert len(nodes) == 1, f'Ambiguous action {text}: {len(nodes)}'
             tap_node(nodes[0])
             return
         if attempt < 4 and scroll:
-            adb('shell', 'input', 'swipe', '850', '2000', '850', '1050', '500')
-            time.sleep(1)
+            scroll_content(root)
     raise AssertionError(f'No visible UI element: {text}')
 
 
 def reveal_text(text):
     for attempt in range(5):
         root = dump('reveal')
-        if find(root, lambda n: text in n.get('text', '') or text in n.get('content-desc', '')):
-            return root
+        scrolls = find(root, lambda n: n.get('class') == 'android.widget.ScrollView'
+                       and n.get('package') == PKG)
+        viewports = []
+        for scroll in scrolls:
+            rect = list(map(int, re.findall(r'\d+', scroll.get('bounds', ''))))
+            if len(rect) == 4 and rect[2] > rect[0] and rect[3] > rect[1]:
+                viewports.append(rect)
+        labels = find(root, lambda n: n.get('class') == 'android.widget.TextView'
+                      and text in n.get('text', ''))
+        for label in labels:
+            rect = list(map(int, re.findall(r'\d+', label.get('bounds', ''))))
+            if len(rect) != 4 or rect[3]-rect[1] < 16:
+                continue
+            # UI Automator clips a partially visible label's bounds. A label
+            # touching a viewport edge is not evidence that its text is readable.
+            if any(rect[0] >= x1 and rect[2] <= x2 and rect[1] > y1+8
+                   and rect[3] < y2-8 for x1,y1,x2,y2 in viewports):
+                return root
         if attempt < 4:
-            adb('shell', 'input', 'swipe', '850', '2000', '850', '1050', '500')
-            time.sleep(1)
-    raise AssertionError(f'No visible UI content after scrolling: {text}')
+            scroll_content(root)
+    raise AssertionError(f'No fully visible UI text after scrolling: {text}')
 
 
 def capture(name):
@@ -90,9 +121,15 @@ def capture(name):
 
 
 def field(hint, value):
-    root = dump('form')
-    nodes = find(root, lambda n: n.get('class') == 'android.widget.EditText'
-                 and hint in n.get('text', ''))
+    nodes = []
+    for attempt in range(5):
+        root = dump('form')
+        nodes = find(root, lambda n: n.get('class') == 'android.widget.EditText'
+                     and hint in n.get('text', ''))
+        if nodes:
+            break
+        if attempt < 4:
+            scroll_content(root)
     assert len(nodes) == 1, f'Expected one input {hint}: {[n.attrib for n in nodes]}'
     tap_node(nodes[0])
     adb('shell', 'input', 'text', value)
@@ -181,7 +218,7 @@ def main():
     adb('shell', 'am', 'force-stop', PKG)
     check_database(date)
     start_launcher()
-    tap_text('Ver semana')
+    tap_text('Semana', exact=True)
     card = find_saved_week_card()
     description = card.get('content-desc', '')
     assert '09:30' in description and NOTE in description, description

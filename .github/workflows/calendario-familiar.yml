@@ -1,4 +1,4 @@
-name: Calendario Familiar Terra v0.2 | APK y pruebas
+name: Calendario Familiar Workito v0.3 | APK y pruebas
 on:
   pull_request:
     paths:
@@ -69,14 +69,14 @@ jobs:
       - name: APK signature and provenance
         run: |
           mkdir -p ../../calendario-delivery
-          cp app/build/outputs/apk/debug/app-debug.apk ../../calendario-delivery/Calendario-Familiar-Terra-v0.2-beta.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs ../../calendario-delivery/Calendario-Familiar-Terra-v0.2-beta.apk > ../../calendario-delivery/APK-VERIFY.txt
+          cp app/build/outputs/apk/debug/app-debug.apk ../../calendario-delivery/Calendario-Familiar-Workito-v0.3-beta.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs ../../calendario-delivery/Calendario-Familiar-Workito-v0.3-beta.apk > ../../calendario-delivery/APK-VERIFY.txt
           cd ../../calendario-delivery
-          sha256sum Calendario-Familiar-Terra-v0.2-beta.apk > SHA256SUMS.txt
+          sha256sum Calendario-Familiar-Workito-v0.3-beta.apk > SHA256SUMS.txt
           git -C .. rev-parse HEAD > SOURCE-COMMIT.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Calendario-Familiar-Terra-v0.2-apk
+          name: Calendario-Familiar-Workito-v0.3-apk
           path: calendario-delivery/
           if-no-files-found: error
           retention-days: 14
@@ -84,7 +84,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Calendario-Familiar-Terra-v0.2-tests
+          name: Calendario-Familiar-Workito-v0.3-tests
           path: |
             apps/calendario-familiar/build-calendario.log
             apps/calendario-familiar/app/build/test-results/testDebugUnitTest/*.xml
@@ -106,7 +106,7 @@ jobs:
           java-version: '17'
       - uses: actions/download-artifact@v4
         with:
-          name: Calendario-Familiar-Terra-v0.2-apk
+          name: Calendario-Familiar-Workito-v0.3-apk
           path: calendario-delivery
       - name: Enable KVM
         run: |
@@ -116,17 +116,18 @@ jobs:
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          target: google_apis
+          # Offline app: use AOSP; the Google APIs image repeatedly ANRs in Pixel Launcher.
+          target: default
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           script: bash apps/calendario-familiar/ci/emulator.sh
       - name: Emulator evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Calendario-Familiar-Terra-v0.2-emulator
+          name: Calendario-Familiar-Workito-v0.3-emulator
           path: calendario-evidence/
           if-no-files-found: warn
           retention-days: 14

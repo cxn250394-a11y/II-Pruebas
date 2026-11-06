@@ -2,12 +2,17 @@ package mx.charly.calendario;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.DatePickerDialog;
+import android.app.TimePickerDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.text.InputFilter;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
@@ -35,12 +40,20 @@ public final class MainActivity extends Activity {
     private CalStore store;
     private int profile=1,brush=Palette.COLORS[0];
     private boolean painting=false;
-    private LocalDate lastPaintDate;
-    private int lastPaintPrevious,lastPaintProfile;
     private YearMonth currentMonth=YearMonth.now();
     private LocalDate selected=LocalDate.now();
     private String page="month";
     private LinearLayout root,body;
+    private int readingSize=1;
+    private String searchQuery="";
+    private Bundle eventDraft;
+    private AlertDialog eventDialog;
+    private EditText draftTitle,draftTime,draftNote;
+    private Spinner draftCategory;
+    private LocalDate draftDate;
+    private long draftId;
+    private int draftProfile;
+
     private char[] backupPassword;
     private static final int EXPORT=101,IMPORT=102;
     private final Locale locale=new Locale("es","MX");
@@ -49,15 +62,37 @@ public final class MainActivity extends Activity {
         store=new CalStore(this);
         profile=getPreferences(MODE_PRIVATE).getInt("active_profile",1);
         if(profile!=1 && profile!=2)profile=1;
+        loadNavigation();
         if(state!=null){
             profile=state.getInt("profile",profile);
             page=state.getString("page","month");
             currentMonth=YearMonth.parse(state.getString("month",YearMonth.now().toString()));
             selected=LocalDate.parse(state.getString("selected",LocalDate.now().toString()));
+            brush=state.getInt("brush",Palette.COLORS[0]);painting=state.getBoolean("painting",false);
+            searchQuery=state.getString("search","");eventDraft=state.getBundle("event_draft");
         }
         render();
+        if(eventDraft!=null)restoreEventDraft();
+    }
+    @Override protected void onPause(){
+        saveNavigation();super.onPause();
+    }
+    private void saveNavigation(){
+        getPreferences(MODE_PRIVATE).edit().putInt("active_profile",profile)
+            .putString("profile_"+profile+"_page",page)
+            .putString("profile_"+profile+"_month",currentMonth.toString())
+            .putString("profile_"+profile+"_selected",selected.toString()).apply();
+    }
+    private void loadNavigation(){
+        android.content.SharedPreferences prefs=getPreferences(MODE_PRIVATE);
+        try{
+            page=prefs.getString("profile_"+profile+"_page","month");
+            currentMonth=YearMonth.parse(prefs.getString("profile_"+profile+"_month",YearMonth.now().toString()));
+            selected=LocalDate.parse(prefs.getString("profile_"+profile+"_selected",LocalDate.now().toString()));
+        }catch(RuntimeException invalid){page="month";currentMonth=YearMonth.now();selected=LocalDate.now();}
     }
     @Override protected void onDestroy(){
+        if(eventDialog!=null)eventDialog.dismiss();
         if(backupPassword!=null)Arrays.fill(backupPassword,'\0');
         if(store!=null)store.close();
         super.onDestroy();
@@ -65,10 +100,17 @@ public final class MainActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle out){
         out.putInt("profile",profile);out.putString("page",page);
         out.putString("month",currentMonth.toString());out.putString("selected",selected.toString());
+        out.putInt("brush",brush);out.putBoolean("painting",painting);out.putString("search",searchQuery);
+        if(eventDialog!=null&&eventDialog.isShowing()){
+            Bundle draft=new Bundle();draft.putString("title",draftTitle.getText().toString());
+            draft.putString("time",draftTime.getText().toString());draft.putString("note",draftNote.getText().toString());
+            draft.putInt("category",draftCategory.getSelectedItemPosition());draft.putInt("profile",draftProfile);
+            draft.putLong("id",draftId);draft.putString("date",draftDate.toString());out.putBundle("event_draft",draft);
+        }
         super.onSaveInstanceState(out);
     }
     private int d(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
-    private float scale(){return store.fontSize(profile)==2?1.27f:store.fontSize(profile)==1?1.13f:1f;}
+    private float scale(){return readingSize==2?1.27f:readingSize==1?1.13f:1f;}
     private GradientDrawable shape(int fill,int radius,int stroke){
         GradientDrawable x=new GradientDrawable();x.setColor(fill);x.setCornerRadius(d(radius));
         if(stroke!=0)x.setStroke(d(1),stroke);
@@ -88,10 +130,19 @@ public final class MainActivity extends Activity {
     private TextView btn(String text,int background,int textColor,Runnable action){
         TextView b=label(text,15,true,textColor);
         b.setGravity(Gravity.CENTER);b.setMinHeight(d(49));b.setPadding(d(11),d(10),d(11),d(10));
-        b.setBackground(shape(background,14,background==SOFT?BORDER:0));
-        b.setClickable(true);b.setFocusable(true);b.setContentDescription(text);
-        b.setOnClickListener(v->action.run());return b;
+        b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x227260A8),shape(background,14,background==SOFT?BORDER:0),null));
+        b.setClickable(true);b.setFocusable(true);
+        buttonRole(b);b.setOnClickListener(v->action.run());return b;
     }
+    private void buttonRole(View view){
+        view.setClickable(true);view.setFocusable(true);
+        view.setAccessibilityDelegate(new View.AccessibilityDelegate(){
+            @Override public void onInitializeAccessibilityNodeInfo(View host,AccessibilityNodeInfo info){
+                super.onInitializeAccessibilityNodeInfo(host,info);info.setClassName(Button.class.getName());
+            }
+        });
+    }
+    private void heading(TextView view){view.setAccessibilityHeading(true);}
     private TextView primary(String text,Runnable action){return btn(text,PURPLE,WHITE,action);}
     private TextView secondary(String text,Runnable action){return btn(text,SOFT,INK,action);}
     private LinearLayout column(){
@@ -116,10 +167,11 @@ public final class MainActivity extends Activity {
         return text.substring(0,1).toUpperCase(locale)+text.substring(1);
     }
     private void render(){
+        readingSize=store.fontSize(profile);
         root=column();root.setBackgroundColor(BG);
         LinearLayout top=column();top.setPadding(d(16),d(11),d(16),d(6));
-        top.addView(label("Calendario Familiar",25,true,INK));
-        top.addView(label("Días con color, citas fáciles de leer",13,false,0xFF586376));
+        TextView brand=label("Calendario Familiar",23,true,INK);heading(brand);top.addView(brand);
+        top.addView(label("Agenda de "+(profile==1?"Yo":"Mamá")+" · guardado en este dispositivo",12,false,0xFF586376));
         add(root,top,0);
         LinearLayout profiles=row();
         weighted(profiles,btn("Yo",profile==1?PURPLE:SOFT,profile==1?WHITE:INK,()->switchProfile(1)),6);
@@ -130,38 +182,53 @@ public final class MainActivity extends Activity {
         body=column();body.setPadding(d(13),d(5),d(13),d(24));
         scroll.addView(body,new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(scroll,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1f));
-        setContentView(root);
+        LinearLayout tabs=row();tabs.setPadding(d(12),d(7),d(12),d(9));tabs.setBackgroundColor(WHITE);
+        String[] screens={"month","week","day","settings"},names={"Mes","Semana","Día","Ajustes"};
+        for(int i=0;i<screens.length;i++){
+            final String target=screens[i];TextView tab=btn(names[i],target.equals(page)?PURPLE:WHITE,target.equals(page)?WHITE:INK,()->{
+                if("month".equals(page)&&("day".equals(target)||"week".equals(target))&&!YearMonth.from(selected).equals(currentMonth))selected=currentMonth.atDay(1);
+                if("month".equals(target)&&("day".equals(page)||"week".equals(page)))currentMonth=YearMonth.from(selected);
+                painting=false;page=target;render();
+            });tab.setTag("nav-"+target);tab.setSelected(target.equals(page));weighted(tabs,tab,i==3?0:3);
+        }
+        add(root,tabs,0);setContentView(root);
         switch(page){
             case "day":drawDay();break;
             case "week":drawWeek();break;
             case "categories":drawCategories();break;
             case "settings":drawSettings();break;
+            case "search":drawSearch();break;
             default:page="month";drawMonth();
         }
     }
     private void switchProfile(int p){
         if(profile==p)return;
-        profile=p;painting=false;page="month";currentMonth=YearMonth.now();lastPaintDate=null;
+        saveNavigation();profile=p;painting=false;searchQuery="";loadNavigation();
         getPreferences(MODE_PRIVATE).edit().putInt("active_profile",p).apply();render();
     }
     private void drawMonth(){
         LinearLayout nav=row();
-        weighted(nav,secondary("‹",()->{currentMonth=currentMonth.minusMonths(1);render();}),4);
+        TextView previousMonth=secondary("‹",()->{currentMonth=currentMonth.minusMonths(1);render();});
+        previousMonth.setContentDescription("Mes anterior");weighted(nav,previousMonth,4);
         TextView title=label(monthTitle(),20,true,INK);
-        title.setGravity(Gravity.CENTER);nav.addView(title,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,3f));
-        weighted(nav,secondary("›",()->{currentMonth=currentMonth.plusMonths(1);render();}),0);
+        title.setGravity(Gravity.CENTER);title.setMinHeight(d(48));buttonRole(title);title.setContentDescription("Elegir fecha. "+monthTitle());
+        title.setOnClickListener(v->chooseDate(currentMonth.atDay(1),date->{selected=date;currentMonth=YearMonth.from(date);render();}));nav.addView(title,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,3f));
+        TextView nextMonth=secondary("›",()->{currentMonth=currentMonth.plusMonths(1);render();});
+        nextMonth.setContentDescription("Mes siguiente");weighted(nav,nextMonth,0);
         add(body,nav,3);
         LinearLayout controls=row();
         weighted(controls,secondary("Hoy",()->{currentMonth=YearMonth.now();selected=LocalDate.now();painting=false;render();}),5);
         weighted(controls,secondary("Colores de eventos",()->{page="categories";painting=false;render();}),0);
         add(body,controls,6);
+        LinearLayout tools=row();weighted(tools,secondary("Buscar citas",()->{page="search";painting=false;render();}),5);
+        weighted(tools,secondary("Pintar rango",()->paintRange()),0);add(body,tools,6);
         add(body,secondary("Ver semana · letras más grandes",()->{
             selected=YearMonth.from(selected).equals(currentMonth)?selected:currentMonth.atDay(1);
             page="week";painting=false;render();
         }),7);
         if(painting){
             LinearLayout hint=card(body,0xFFECE8F5);
-            hint.addView(label("Modo pintar · toca varios días",17,true,PURPLE));
+            hint.addView(label("Pintar · "+nameColor(brush),17,true,PURPLE));
             hint.addView(label("Cada toque colorea el día completo. Los eventos no cambian de color.",13,false,INK));
             LinearLayout actions=row();
             weighted(actions,secondary("Cambiar color",()->pickColor(c->{brush=c;render();})),5);
@@ -178,7 +245,7 @@ public final class MainActivity extends Activity {
         }
         add(body,weekdays,9);
         CalStore.MonthData monthData=store.month(profile,currentMonth);
-        MonthGrid grid=new MonthGrid(this,currentMonth,monthData,store.fontSize(profile),date->{
+        MonthGrid grid=new MonthGrid(this,currentMonth,monthData,readingSize,date->{
             if(painting){
                 paintDay(date,brush);
                 monthData.backgrounds.put(date.toString(),brush);
@@ -187,8 +254,10 @@ public final class MainActivity extends Activity {
                 selected=date;page="day";render();
             }
         });
+        grid.setSelectedDate(selected);grid.setPainting(painting);
         grid.setTag("month-grid");
         add(body,grid,0);
+        if(store.hasPaintUndo(profile))add(body,secondary("Deshacer último color o rango",()->undoLastPaint()),8);
         // Helps everyone, especially the large-font profile, find full event names.
         LinearLayout expl=card(body,WHITE);
         expl.addView(label("Toca un día para ver todas sus citas",16,true,INK));
@@ -196,21 +265,17 @@ public final class MainActivity extends Activity {
         add(body,secondary("Tamaño de letra y respaldo",()->{page="settings";painting=false;render();}),10);
     }
     private void paintDay(LocalDate date,int color){
-        int previous=store.dayColor(profile,date.toString());
-        if(previous==color)return;
-        store.paint(profile,date.toString(),color);
-        lastPaintDate=date;lastPaintPrevious=previous;lastPaintProfile=profile;
+        store.paintBatch(profile,java.util.Collections.singletonList(date),color);
     }
     private void undoLastPaint(){
-        if(lastPaintDate==null || lastPaintProfile!=profile){
-            toast("Todavía no hay un color que deshacer");return;
-        }
-        store.paint(profile,lastPaintDate.toString(),lastPaintPrevious);
-        lastPaintDate=null;render();
+        try{
+            if(!store.undoPaint(profile)){toast("Todavía no hay un color que deshacer");return;}
+            render();toast("Se restauraron los colores anteriores");
+        }catch(IllegalStateException stale){toast("Los colores cambiaron después; no se sobrescribieron");}
     }
     /** Called after a paint operation; redraw the month without resetting scroll position. */
     private void gridInvalidateByDate(CalStore.MonthData data,LocalDate date,int color){
-        View v=body.findViewWithTag("month-grid");if(v!=null)v.invalidate();
+        View v=body.findViewWithTag("month-grid");if(v instanceof MonthGrid)((MonthGrid)v).notifyDataChanged();
     }
     /** Larger native view: 7 individual accessible day cards, unlike the small month grid. */
     private void drawWeek(){
@@ -223,13 +288,15 @@ public final class MainActivity extends Activity {
         add(body,nav,9);
         add(body,label("Semana del "+dateTitle(WeekRules.sunday(selected)),19,true,INK),12);
         add(body,label("Vista grande. Toca un día para ver o editar sus citas.",15,false,0xFF566374),3);
+        add(body,secondary("Esta semana",()->{selected=LocalDate.now();currentMonth=YearMonth.from(selected);render();}),6);
+        CalStore.MonthData weekData=store.range(profile,WeekRules.sunday(selected),WeekRules.sunday(selected).plusDays(6));
         for(LocalDate date:WeekRules.days(selected)){
-            int dayColor=store.dayColor(profile,date.toString());
+            int dayColor=weekData.color(date.toString());
             int ink=Palette.text(dayColor);
-            List<CalStore.Event> events=store.events(profile,date.toString());
+            List<CalStore.Event> events=weekData.events(date.toString());
             LinearLayout dayCard=card(body,dayColor);
             dayCard.setMinimumHeight(d(78));
-            dayCard.addView(label(dateTitle(date),21,true,ink));
+            dayCard.addView(label(dateTitle(date)+(date.equals(LocalDate.now())?" · Hoy":""),21,true,ink));
             if(events.isEmpty())dayCard.addView(label("Sin eventos",15,false,ink));
             else for(CalStore.Event event:events){
                 LinearLayout tile=column();
@@ -252,6 +319,9 @@ public final class MainActivity extends Activity {
     }
     private void drawDay(){
         add(body,secondary("‹ Volver al mes",()->{page="month";currentMonth=YearMonth.from(selected);render();}),3);
+        LinearLayout days=row();weighted(days,secondary("‹ Día anterior",()->{selected=selected.minusDays(1);currentMonth=YearMonth.from(selected);render();}),5);
+        weighted(days,secondary("Día siguiente ›",()->{selected=selected.plusDays(1);currentMonth=YearMonth.from(selected);render();}),0);add(body,days,7);
+        add(body,secondary("Elegir fecha",()->chooseDate(selected,date->{selected=date;currentMonth=YearMonth.from(selected);render();})),6);
         LinearLayout day=card(body,store.dayColor(profile,selected.toString()));
         int fg=Palette.text(store.dayColor(profile,selected.toString()));
         day.addView(label(dateTitle(selected),23,true,fg));
@@ -260,7 +330,7 @@ public final class MainActivity extends Activity {
         weighted(actions,secondary("Pintar día",()->pickColor(c->{paintDay(selected,c);render();})),5);
         weighted(actions,secondary("Quitar color",()->{paintDay(selected,Palette.DEFAULT_DAY);render();}),0);
         add(body,actions,10);
-        if(lastPaintDate!=null&&lastPaintProfile==profile)
+        if(store.hasPaintUndo(profile))
             add(body,secondary("Deshacer último color",()->undoLastPaint()),6);
         add(body,primary("+ Añadir evento o cita",()->editEvent(null)),9);
         List<CalStore.Event> events=store.events(profile,selected.toString());
@@ -282,7 +352,7 @@ public final class MainActivity extends Activity {
             text.addView(label("Toca para editar",12,false,0xFF6D7682));
             contents.addView(text,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));
             c.addView(contents,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
-            c.setOnClickListener(v->editEvent(e));c.setFocusable(true);
+            buttonRole(c);c.setOnClickListener(v->editEvent(e));
             c.setContentDescription(e.categoryName+", "+e.title+(e.time.isEmpty()?"":", hora "+e.time)+". Toca para editar");
         }
         add(body,secondary("Administrar colores de eventos",()->{page="categories";render();}),15);
@@ -304,6 +374,7 @@ public final class MainActivity extends Activity {
             right.addView(label("Toca para cambiar nombre o color",12,false,0xFF667080));
             row.addView(right,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));
             card.addView(row);
+            buttonRole(card);card.setContentDescription(c.name+". Color "+nameColor(c.color)+". Editar categoría");
             card.setOnClickListener(v->editCategory(c));
         }
     }
@@ -343,8 +414,9 @@ public final class MainActivity extends Activity {
                 TextView b=label(Palette.NAMES[i],12,true,Palette.text(color));
                 b.setBackground(shape(color,12,0));b.setGravity(Gravity.CENTER);
                 b.setMinHeight(d(66));b.setPadding(d(4),d(7),d(4),d(7));
-                GridLayout.LayoutParams p=new GridLayout.LayoutParams();p.width=cell-d(5);p.height=d(74);
+                GridLayout.LayoutParams p=new GridLayout.LayoutParams();p.width=cell-d(5);p.height=ViewGroup.LayoutParams.WRAP_CONTENT;
                 p.setMargins(d(2),d(3),d(3),d(3));grid.addView(b,p);
+                buttonRole(b);b.setContentDescription(Palette.NAMES[i]);
                 b.setOnClickListener(v->{dlg.dismiss();chosen.accept(color);});
             }
             add(content,grid,5);
@@ -359,8 +431,13 @@ public final class MainActivity extends Activity {
     }
     private void editEvent(CalStore.Event existing){
         List<CalStore.Category> categories=store.categories(profile);
+        draftId=existing==null?0:existing.id;draftProfile=profile;draftDate=existing==null?selected:LocalDate.parse(existing.date);
         LinearLayout form=column();form.setPadding(d(18),0,d(18),d(12));
         EditText title=input("Ej. Consulta, análisis, oficina",existing==null?"":existing.title);
+        title.setFilters(new InputFilter[]{new InputFilter.LengthFilter(90)});draftTitle=title;
+        TextView dateButton=secondary("Fecha: "+dateTitle(draftDate),()->{});
+        dateButton.setTag("event-date-button");dateButton.setOnClickListener(v->chooseDate(draftDate,date->{draftDate=date;dateButton.setText("Fecha: "+dateTitle(date));}));
+        add(form,dateButton,5);
         add(form,label("Nombre del evento",16,true,INK),5);add(form,title,0);
         add(form,label("Lugar o tipo (su color)",16,true,INK),11);
         ArrayList<String> names=new ArrayList<>();names.add("Sin categoría");
@@ -368,25 +445,33 @@ public final class MainActivity extends Activity {
         Spinner spinner=new Spinner(this);
         spinner.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,names));
         if(existing!=null)for(int i=0;i<categories.size();i++)if(categories.get(i).id==existing.category)spinner.setSelection(i+1);
-        add(form,spinner,5);
+        spinner.setMinimumHeight(d(48));draftCategory=spinner;add(form,spinner,5);
         EditText time=input("Hora opcional, ej. 09:30",existing==null?"":existing.time);
         time.setInputType(InputType.TYPE_CLASS_DATETIME|InputType.TYPE_DATETIME_VARIATION_TIME);
-        add(form,label("Hora (opcional)",16,true,INK),10);add(form,time,0);
+        draftTime=time;add(form,label("Hora (opcional)",16,true,INK),10);add(form,time,0);
+        add(form,secondary("Elegir hora",()->{
+            java.time.LocalTime initial;try{initial=java.time.LocalTime.parse(time.getText().toString());}catch(Exception invalid){initial=java.time.LocalTime.of(9,0);}
+            new TimePickerDialog(this,(picker,h,m)->time.setText(String.format(Locale.ROOT,"%02d:%02d",h,m)),initial.getHour(),initial.getMinute(),true).show();
+        }),4);
         EditText notes=input("Detalles importantes (opcional)",existing==null?"":existing.note);
         notes.setSingleLine(false);notes.setMinLines(2);notes.setMaxLines(4);
+        notes.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        notes.setFilters(new InputFilter[]{new InputFilter.LengthFilter(500)});draftNote=notes;
         add(form,label("Notas (opcional)",16,true,INK),10);add(form,notes,0);
         ScrollView sc=new ScrollView(this);sc.addView(form);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle(existing==null?"Añadir evento":"Editar evento")
             .setView(sc).setPositiveButton("Guardar",null).setNegativeButton("Cancelar",null)
             .setNeutralButton(existing==null?"":"Eliminar",null).create();
+        eventDialog=dialog;
+        dialog.setOnDismissListener(x->{if(eventDialog==dialog)eventDialog=null;});
         dialog.setOnShowListener(x->{
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
                 try{
                     int index=spinner.getSelectedItemPosition();
                     long category=index==0?0:categories.get(index-1).id;
-                    store.saveEvent(profile,existing==null?0:existing.id,selected.toString(),title.getText().toString(),
+                    store.saveEvent(draftProfile,draftId,draftDate.toString(),title.getText().toString(),
                         time.getText().toString(),notes.getText().toString(),category);
-                    dialog.dismiss();render();
+                    selected=draftDate;currentMonth=YearMonth.from(selected);dialog.dismiss();render();
                 }catch(Exception ex){toast("Revisa el título y la hora (HH:mm). "+ex.getMessage());}
             });
             if(existing!=null)dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->
@@ -462,7 +547,8 @@ public final class MainActivity extends Activity {
         if(request!=EXPORT&&request!=IMPORT)return;
         char[] pass=backupPassword;backupPassword=null;
         try{
-            if(result!=RESULT_OK||data==null||data.getData()==null||pass==null)return;
+            if(result!=RESULT_OK||data==null||data.getData()==null)return;
+            if(pass==null){toast("La pantalla se recreó. Vuelve a elegir el respaldo y escribe la contraseña.");return;}
             if(request==EXPORT){
                 byte[] raw=Backup.exportData(store);
                 byte[] encrypted=Backup.encrypt(raw,pass);
@@ -487,8 +573,82 @@ public final class MainActivity extends Activity {
         }catch(Exception e){toast("No se pudo usar el respaldo. Verifica archivo y contraseña; los datos existentes se conservaron si falló la validación.");}
         finally{if(pass!=null)Arrays.fill(pass,'\0');}
     }
+
+    private void chooseDate(LocalDate initial,java.util.function.Consumer<LocalDate> chosen){
+        new DatePickerDialog(this,(picker,year,month,day)->chosen.accept(LocalDate.of(year,month+1,day)),
+            initial.getYear(),initial.getMonthValue()-1,initial.getDayOfMonth()).show();
+    }
+    private void restoreEventDraft(){
+        Bundle saved=eventDraft;eventDraft=null;
+        if(saved.getInt("profile")!=profile)return;
+        CalStore.Event original=null;long id=saved.getLong("id");
+        if(id>0){
+            for(CalStore.Event event:store.events(profile,selected.toString()))if(event.id==id){original=event;break;}
+            if(original==null){toast("El evento ya no está disponible");return;}
+        }
+        editEvent(original);
+        draftTitle.setText(saved.getString("title",""));draftTime.setText(saved.getString("time",""));
+        draftNote.setText(saved.getString("note",""));draftDate=LocalDate.parse(saved.getString("date",selected.toString()));
+        draftCategory.setSelection(Math.min(saved.getInt("category"),draftCategory.getCount()-1));
+        TextView dateButton=eventDialog.getWindow().getDecorView().findViewWithTag("event-date-button");
+        if(dateButton!=null)dateButton.setText("Fecha: "+dateTitle(draftDate));
+    }
+    private void paintRange(){
+        final LocalDate[] dates={selected,selected};
+        final int[] color={brush};
+        LinearLayout form=column();form.setPadding(d(18),d(5),d(18),d(12));
+        form.addView(label("Colorea un rango de hasta 366 días de "+(profile==1?"Yo":"Mamá")+". Las citas conservan su color.",15,false,INK));
+        TextView first=secondary("Desde: "+dates[0],()->{}),last=secondary("Hasta: "+dates[1],()->{});
+        first.setOnClickListener(v->chooseDate(dates[0],date->{dates[0]=date;first.setText("Desde: "+date);}));
+        last.setOnClickListener(v->chooseDate(dates[1],date->{dates[1]=date;last.setText("Hasta: "+date);}));
+        add(form,first,7);add(form,last,7);
+        TextView choice=btn("Color: "+nameColor(color[0]),color[0],Palette.text(color[0]),()->{});
+        choice.setOnClickListener(v->pickColor(chosen->{color[0]=chosen;choice.setText("Color: "+nameColor(chosen));
+            choice.setTextColor(Palette.text(chosen));choice.setBackground(shape(chosen,14,0));}));
+        add(form,choice,7);
+        ScrollView sc=new ScrollView(this);sc.addView(form);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Pintar un rango")
+            .setView(sc).setNegativeButton("Cancelar",null).setPositiveButton("Revisar",null).create();
+        dialog.setOnShowListener(x->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            long count=java.time.temporal.ChronoUnit.DAYS.between(dates[0],dates[1])+1;
+            if(count<1||count>366){toast("Elige un rango en orden de 1 a 366 días");return;}
+            new AlertDialog.Builder(this).setTitle("Confirmar "+count+" días")
+                .setMessage("Agenda de "+(profile==1?"Yo":"Mamá")+" · "+dates[0]+" a "+dates[1]+
+                    "\nColor: "+nameColor(color[0])+". Podrás deshacer este lote completo.")
+                .setNegativeButton("Volver",null).setPositiveButton("Pintar",(confirm,which)->{
+                    List<LocalDate> batch=new ArrayList<>();for(LocalDate day=dates[0];!day.isAfter(dates[1]);day=day.plusDays(1))batch.add(day);
+                    store.paintBatch(profile,batch,color[0]);brush=color[0];selected=dates[0];currentMonth=YearMonth.from(selected);
+                    page="month";painting=false;dialog.dismiss();render();toast("Rango guardado");
+                }).show();
+        }));dialog.show();
+    }
+    private void drawSearch(){
+        add(body,secondary("‹ Volver al calendario",()->{page="month";render();}),3);
+        TextView title=label("Buscar en "+(profile==1?"Yo":"Mamá"),22,true,INK);heading(title);add(body,title,12);
+        add(body,label("Busca por nombre, lugar o notas. Solo se consulta esta agenda en el dispositivo.",14,false,0xFF586376),3);
+        EditText query=input("Ej. consulta o llevar estudios",searchQuery);
+        query.setFilters(new InputFilter[]{new InputFilter.LengthFilter(120)});add(body,query,8);
+        add(body,primary("Buscar",()->{searchQuery=query.getText().toString().trim();render();}),7);
+        if(searchQuery.isEmpty()){add(body,label("Escribe lo que necesitas encontrar.",16,false,INK),12);return;}
+        List<CalStore.Event> results=store.search(profile,searchQuery);
+        add(body,label(results.size()==100?"Primeras 100 citas. Afina tu búsqueda.":results.size()+" citas encontradas",16,true,INK),12);
+        if(results.isEmpty())add(body,label("No hay coincidencias en esta agenda.",16,false,0xFF586376),8);
+        for(CalStore.Event event:results){
+            LinearLayout result=card(body,WHITE);
+            result.addView(label(dateTitle(LocalDate.parse(event.date))+" · "+LocalDate.parse(event.date).getYear(),14,true,PURPLE));
+            result.addView(label(WeekRules.eventLine(event),17,true,INK));
+            if(!event.note.isEmpty())result.addView(label(event.note,14,false,0xFF586376));
+            buttonRole(result);result.setContentDescription(event.date+". "+WeekRules.eventLine(event)+". "+event.note+". Abrir día");
+            result.setOnClickListener(v->{selected=LocalDate.parse(event.date);currentMonth=YearMonth.from(selected);page="day";render();});
+        }
+    }
+
     @Override @Deprecated public void onBackPressed(){
-        if(!"month".equals(page)){page="month";painting=false;render();return;}
+        if(painting){painting=false;render();return;}
+        if(!"month".equals(page)){
+            if("day".equals(page)||"week".equals(page))currentMonth=YearMonth.from(selected);
+            page="month";painting=false;render();return;
+        }
         super.onBackPressed();
     }
 }

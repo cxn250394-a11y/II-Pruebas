@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 
 public final class CalStore extends SQLiteOpenHelper {
@@ -41,7 +43,7 @@ public final class CalStore extends SQLiteOpenHelper {
         public int color(String day) {return backgrounds.getOrDefault(day,Palette.DEFAULT_DAY);}
         public List<Event> events(String day) {return events.getOrDefault(day,Collections.emptyList());}
     }
-    public CalStore(Context c){super(c.getApplicationContext(),"calendario-familiar.db",null,1);}
+    public CalStore(Context c){super(c.getApplicationContext(),"calendario-familiar.db",null,2);}
     @Override public void onConfigure(SQLiteDatabase db){db.setForeignKeyConstraintsEnabled(true);}
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE profiles(id INTEGER PRIMARY KEY, name TEXT NOT NULL, font_size INTEGER NOT NULL DEFAULT 1)");
@@ -49,6 +51,7 @@ public final class CalStore extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE categories(id INTEGER PRIMARY KEY AUTOINCREMENT, profile_id INTEGER NOT NULL, name TEXT NOT NULL, short_name TEXT NOT NULL, color INTEGER NOT NULL, FOREIGN KEY(profile_id) REFERENCES profiles(id))");
         db.execSQL("CREATE TABLE events(id INTEGER PRIMARY KEY AUTOINCREMENT, profile_id INTEGER NOT NULL, day TEXT NOT NULL, title TEXT NOT NULL, event_time TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', category_id INTEGER, FOREIGN KEY(profile_id) REFERENCES profiles(id), FOREIGN KEY(category_id) REFERENCES categories(id))");
         db.execSQL("CREATE INDEX events_by_day ON events(profile_id,day,event_time,id)");
+        createPaintUndo(db);
         db.execSQL("INSERT INTO profiles(id,name,font_size) VALUES(1,'Yo',1),(2,'Mamá',2)");
         seed(db,1,"Oficina","Oficina",0xFF4FC8C6);
         seed(db,1,"Personal","Personal",0xFFA18BE3);
@@ -59,7 +62,11 @@ public final class CalStore extends SQLiteOpenHelper {
         ContentValues v=new ContentValues();v.put("profile_id",profile);v.put("name",name);
         v.put("short_name",shortName);v.put("color",color);db.insertOrThrow("categories",null,v);
     }
+    private static void createPaintUndo(SQLiteDatabase db){
+        db.execSQL("CREATE TABLE paint_undo(profile_id INTEGER NOT NULL, day TEXT NOT NULL, previous_color INTEGER NOT NULL, applied_color INTEGER NOT NULL, PRIMARY KEY(profile_id,day), FOREIGN KEY(profile_id) REFERENCES profiles(id))");
+    }
     @Override public void onUpgrade(SQLiteDatabase db,int oldVersion,int newVersion) {
+        if(oldVersion==1&&newVersion==2){createPaintUndo(db);return;}
         throw new IllegalStateException("Missing database migration: "+oldVersion+"→"+newVersion);
     }
     public static void checkProfile(int id){if(id!=1&&id!=2)throw new IllegalArgumentException("Perfil inválido");}
@@ -81,17 +88,98 @@ public final class CalStore extends SQLiteOpenHelper {
         SQLiteDatabase db=getWritableDatabase();
         if(color==Palette.DEFAULT_DAY){db.delete("day_colors","profile_id=? AND day=?",new String[]{""+profile,date});return;}
         ContentValues v=new ContentValues();v.put("profile_id",profile);v.put("day",date);v.put("color",color);
-        db.insertWithOnConflict("day_colors",null,v,SQLiteDatabase.CONFLICT_REPLACE);
+        if(db.insertWithOnConflict("day_colors",null,v,SQLiteDatabase.CONFLICT_REPLACE)==-1)
+            throw new IllegalStateException("No se pudo guardar el color del día");
+    }
+    /** Applies a complete painting gesture and its undo record in one SQLite transaction. */
+    public synchronized LinkedHashMap<String,Integer> paintBatch(int profile,List<LocalDate> dates,int color){
+        checkProfile(profile);
+        if(dates==null||!Palette.isAvailable(color))throw new IllegalArgumentException("Fechas o color inválidos");
+        LinkedHashSet<String> unique=new LinkedHashSet<>();
+        for(LocalDate date:dates){
+            if(date==null)throw new IllegalArgumentException("Fecha inválida");
+            unique.add(date.toString());
+            if(unique.size()>366)throw new IllegalArgumentException("Máximo 366 fechas por lote");
+        }
+        LinkedHashMap<String,Integer> previous=new LinkedHashMap<>();
+        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        try{
+            for(String date:unique){
+                int before=dayColor(profile,date);
+                if(before!=color)previous.put(date,before);
+            }
+            // Touching an already painted date must not erase the previous undo action.
+            if(!previous.isEmpty()){
+                db.delete("paint_undo","profile_id=?",new String[]{""+profile});
+                for(Map.Entry<String,Integer> entry:previous.entrySet()){
+                    paint(profile,entry.getKey(),color);
+                    ContentValues v=new ContentValues();v.put("profile_id",profile);v.put("day",entry.getKey());
+                    v.put("previous_color",entry.getValue());v.put("applied_color",color);
+                    db.insertOrThrow("paint_undo",null,v);
+                }
+            }
+            db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
+        return previous;
+    }
+    public synchronized boolean hasPaintUndo(int profile){
+        checkProfile(profile);
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM paint_undo WHERE profile_id=? LIMIT 1",new String[]{""+profile})){
+            return c.moveToFirst();
+        }
+    }
+    /** Refuses stale undo records rather than overwriting a later change. */
+    public synchronized boolean undoPaint(int profile){
+        checkProfile(profile);
+        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        try{
+            LinkedHashMap<String,Integer> previous=new LinkedHashMap<>();
+            try(Cursor c=db.rawQuery("SELECT day,previous_color,applied_color FROM paint_undo WHERE profile_id=? ORDER BY day",new String[]{""+profile})){
+                while(c.moveToNext()){
+                    String date=c.getString(0);int before=c.getInt(1),applied=c.getInt(2);
+                    day(date);
+                    if(previous.size()>=366||!Palette.isAvailable(before)||!Palette.isAvailable(applied)||dayColor(profile,date)!=applied)
+                        throw new IllegalStateException("Este color cambió después del último lote; no se puede deshacer");
+                    previous.put(date,before);
+                }
+            }
+            for(Map.Entry<String,Integer> entry:previous.entrySet())paint(profile,entry.getKey(),entry.getValue());
+            db.delete("paint_undo","profile_id=?",new String[]{""+profile});
+            db.setTransactionSuccessful();return !previous.isEmpty();
+        }finally{db.endTransaction();}
+    }
+    /** Validates the entire map before touching any day. Used for a deliberate restore. */
+    public synchronized void restorePaint(int profile,Map<String,Integer> colors){
+        checkProfile(profile);
+        if(colors==null||colors.size()>366)throw new IllegalArgumentException("Máximo 366 fechas por lote");
+        LinkedHashMap<String,Integer> checked=new LinkedHashMap<>();
+        for(Map.Entry<String,Integer> entry:colors.entrySet()){
+            String date=entry.getKey();Integer color=entry.getValue();
+            if(date==null||color==null||!Palette.isAvailable(color))throw new IllegalArgumentException("Fecha o color inválidos");
+            day(date);checked.put(date,color);
+        }
+        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        try{
+            for(Map.Entry<String,Integer> entry:checked.entrySet())paint(profile,entry.getKey(),entry.getValue());
+            db.delete("paint_undo","profile_id=?",new String[]{""+profile});
+            db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
     }
     public synchronized MonthData month(int profile,YearMonth month){
+        return range(profile,month.atDay(1),month.atEndOfMonth());
+    }
+    /** One snapshot for a visible month or week, including weeks crossing a year boundary. */
+    public synchronized MonthData range(int profile,LocalDate firstDate,LocalDate lastDate){
         checkProfile(profile);
-        String first=month.atDay(1).toString(),last=month.atEndOfMonth().toString();
+        if(firstDate==null||lastDate==null||firstDate.isAfter(lastDate))
+            throw new IllegalArgumentException("Rango de fechas inválido");
+        String first=firstDate.toString(),last=lastDate.toString();
         MonthData out=new MonthData();
         SQLiteDatabase db=getReadableDatabase();
         try(Cursor c=db.rawQuery("SELECT day,color FROM day_colors WHERE profile_id=? AND day BETWEEN ? AND ?",new String[]{""+profile,first,last})){
             while(c.moveToNext())out.backgrounds.put(c.getString(0),c.getInt(1));
         }
-        try(Cursor c=db.rawQuery("SELECT e.id,e.category_id,e.day,e.title,e.event_time,e.note,COALESCE(cat.color,?),COALESCE(cat.name,''),COALESCE(cat.short_name,'') FROM events e LEFT JOIN categories cat ON e.category_id=cat.id WHERE e.profile_id=? AND e.day BETWEEN ? AND ? ORDER BY e.event_time,e.id",
+        try(Cursor c=db.rawQuery("SELECT e.id,e.category_id,e.day,e.title,e.event_time,e.note,COALESCE(cat.color,?),COALESCE(cat.name,''),COALESCE(cat.short_name,'') FROM events e LEFT JOIN categories cat ON e.category_id=cat.id WHERE e.profile_id=? AND e.day BETWEEN ? AND ? ORDER BY e.day,e.event_time,e.id",
                 new String[]{""+0xFF7363B2,""+profile,first,last})){
             while(c.moveToNext()){
                 Event e=event(c);out.events.computeIfAbsent(e.date,k->new ArrayList<>()).add(e);
@@ -113,6 +201,30 @@ public final class CalStore extends SQLiteOpenHelper {
         ArrayList<Event> out=new ArrayList<>();
         try(Cursor c=getReadableDatabase().rawQuery("SELECT e.id,e.category_id,e.day,e.title,e.event_time,e.note,COALESCE(cat.color,?),COALESCE(cat.name,''),COALESCE(cat.short_name,'') FROM events e LEFT JOIN categories cat ON e.category_id=cat.id WHERE e.profile_id=? AND e.day=? ORDER BY e.event_time,e.id",
             new String[]{""+0xFF7363B2,""+profile,date})){
+            while(c.moveToNext())out.add(event(c));
+        }
+        return out;
+    }
+    /**
+     * Literal, local search of this profile only. Wildcards typed by the user are
+     * ordinary characters; every value is bound rather than interpolated into SQL.
+     * An empty query never exposes an unrequested list of all appointments.
+     */
+    public synchronized List<Event> search(int profile,String query) {
+        checkProfile(profile);
+        ArrayList<Event> out=new ArrayList<>();
+        String text=query==null?"":query.trim();
+        if(text.isEmpty())return out;
+        if(text.length()>120)throw new IllegalArgumentException("Busca con un texto de hasta 120 caracteres");
+        String pattern="%"+text.replace("!","!!").replace("%","!%").replace("_","!_")+"%";
+        try(Cursor c=getReadableDatabase().rawQuery(
+            "SELECT e.id,e.category_id,e.day,e.title,e.event_time,e.note,COALESCE(cat.color,?),COALESCE(cat.name,''),COALESCE(cat.short_name,'') "+
+            "FROM events e LEFT JOIN categories cat ON e.category_id=cat.id AND cat.profile_id=e.profile_id "+
+            "WHERE e.profile_id=? AND (e.title LIKE ? ESCAPE '!' COLLATE NOCASE "+
+            "OR e.note LIKE ? ESCAPE '!' COLLATE NOCASE OR cat.name LIKE ? ESCAPE '!' COLLATE NOCASE "+
+            "OR cat.short_name LIKE ? ESCAPE '!' COLLATE NOCASE) "+
+            "ORDER BY e.day,e.event_time,e.id LIMIT 100",
+            new String[]{""+0xFF7363B2,""+profile,pattern,pattern,pattern,pattern})){
             while(c.moveToNext())out.add(event(c));
         }
         return out;
