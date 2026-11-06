@@ -23,6 +23,11 @@ public final class Backup {
     private Backup(){}
     private static final byte[] MAGIC = new byte[]{'C','F','A','M','1'};
     private static final int ITERATIONS = 170_000;
+    /** String.isBlank is API 33; keep equivalent Unicode validation on API 28. */
+    private static boolean blank(String text){
+        for(int i=0;i<text.length();){int point=text.codePointAt(i);if(!Character.isWhitespace(point))return false;i+=Character.charCount(point);}
+        return true;
+    }
     private static SecretKeySpec key(char[] password,byte[] salt)throws Exception{
         if(password.length<12)throw new IllegalArgumentException("Contraseña de al menos 12 caracteres");
         PBEKeySpec spec=new PBEKeySpec(password,salt,ITERATIONS,256);
@@ -91,7 +96,7 @@ public final class Backup {
             CalStore.checkProfile(profile);
             if(id<=0||!catIds.add(id)||!Palette.isAvailable(color))throw new IllegalArgumentException("Categoría duplicada o inválida");
             String name=o.getString("name"),shortName=o.getString("short");
-            if(name.isBlank()||name.length()>46||shortName.isBlank()||shortName.length()>16)throw new IllegalArgumentException("Nombre de categoría inválido");
+            if(blank(name)||name.length()>46||blank(shortName)||shortName.length()>16)throw new IllegalArgumentException("Nombre de categoría inválido");
             categoryOwner.put(id,profile);
         }
         for(int i=0;i<days.length();i++){
@@ -104,7 +109,7 @@ public final class Backup {
             CalStore.checkProfile(profile);LocalDate.parse(o.getString("date"));
             if(id<=0||!eventIds.add(id))throw new IllegalArgumentException("Evento duplicado");
             String title=o.getString("title"),time=o.getString("time"),note=o.getString("note");
-            if(title.isBlank()||title.length()>90||note.length()>500||
+            if(blank(title)||title.length()>90||note.length()>500||
                 (!time.isEmpty()&&!time.matches("(?:[01][0-9]|2[0-3]):[0-5][0-9]")))throw new IllegalArgumentException("Evento inválido");
             if(!o.isNull("category") && !Integer.valueOf(profile).equals(categoryOwner.get(o.getLong("category"))))
                 throw new IllegalArgumentException("Categoría de otro perfil o ausente");
@@ -118,7 +123,7 @@ public final class Backup {
         }
         SQLiteDatabase db=store.getWritableDatabase();db.beginTransaction();
         try{
-            db.delete("events",null,null);db.delete("day_colors",null,null);db.delete("categories",null,null);
+            db.delete("paint_undo",null,null);db.delete("events",null,null);db.delete("day_colors",null,null);db.delete("categories",null,null);
             for(int i=0;i<cats.length();i++){
                 JSONObject o=cats.getJSONObject(i);ContentValues v=new ContentValues();
                 v.put("id",o.getLong("id"));v.put("profile_id",o.getInt("profile"));v.put("name",o.getString("name"));

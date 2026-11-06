@@ -12,7 +12,7 @@ diagnose_failure() {
   fi
 }
 trap diagnose_failure EXIT
-APK="calendario-delivery/Calendario-Familiar-Terra-v0.2-beta.apk"
+APK="calendario-delivery/Calendario-Familiar-Workito-v0.3-beta.apk"
 adb install -r "$APK" > calendario-evidence/install.txt
 grep -q 'Success' calendario-evidence/install.txt
 # This script is destructive only to the disposable emulator's test package.
