@@ -116,11 +116,12 @@ jobs:
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          target: google_apis
+          # Offline app: use AOSP; the Google APIs image repeatedly ANRs in Pixel Launcher.
+          target: default
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           script: bash apps/calendario-familiar/ci/emulator.sh
       - name: Emulator evidence
         if: always()
